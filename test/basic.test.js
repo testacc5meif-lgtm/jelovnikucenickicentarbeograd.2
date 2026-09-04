@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
+// Тестови раде на свом SQLite фајлу и никад не додирују живу базу.
+// Без овога би подешавања из .env одвела тестове на Supabase, па би
+// падали кад год се тамо нешто промени.
+process.env.DATABASE_URL = '';
 process.env.DB_PATH = './data/test.db';
 
 const { toCyrillic } = await import('../src/translit.js');
@@ -87,9 +91,15 @@ test('ниједно обавештење не открива садржај м�
 });
 
 test('избор поруке је поновљив и мења се из дана у дан', () => {
-  assert.equal(pickMessage('rucak', '2026-09-03').title, pickMessage('rucak', '2026-09-03').title);
+  assert.equal(pickMessage('rucak', '2026-09-03').body, pickMessage('rucak', '2026-09-03').body);
+
+  // Пореди се цела порука, не само наслов. Наслови се понављају зато што
+  // морају да стану у један ред, па разноликост носи текст испод њега.
   const week = ['01', '02', '03', '04', '05', '06', '07']
-    .map((day) => pickMessage('rucak', `2026-09-${day}`).title);
+    .map((day) => {
+      const message = pickMessage('rucak', `2026-09-${day}`);
+      return `${message.title}|${message.body}`;
+    });
   assert.equal(new Set(week).size, 7, 'кроз недељу дана не понавља се иста порука');
 });
 
@@ -251,4 +261,24 @@ test('дан у недељи се рачуна из датума, не чита 
   });
   assert.equal(result.days[0].weekday, 'уторак');
   assert.equal(result.days[1].weekday, 'недеља');
+});
+
+test('наслов обавештења почиње називом оброка и стаје у један ред', async () => {
+  // Android наслов скраћује на један ред. Кад је оброк прва реч, чак и
+  // пресечено „Ручак…" каже све што треба.
+  const { TITLE_LIMIT } = await import('../src/messages.js');
+  const first = { dorucak: 'Доручак', rucak: 'Ручак', vecera: 'Вечера' };
+
+  for (const [meal, pool] of Object.entries(POOLS)) {
+    for (const message of pool) {
+      assert.ok(
+        message.title.startsWith(first[meal]),
+        `наслов за ${meal} не почиње речју "${first[meal]}": ${message.title}`,
+      );
+      assert.ok(
+        message.title.length <= TITLE_LIMIT,
+        `наслов је дуг ${message.title.length} знакова, највише ${TITLE_LIMIT}: ${message.title}`,
+      );
+    }
+  }
 });
