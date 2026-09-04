@@ -342,6 +342,12 @@ try {
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch((error) => console.warn('SW:', error.message));
+
+  // Приказ креће из кеша, па сервер стигне са свежијим подацима касније.
+  // Тада service worker јави, а приказ се тихо освежи.
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'menu-updated') load().catch(() => {});
+  });
   navigator.serviceWorker.ready
     .then((registration) => registration.pushManager.getSubscription())
     .then((subscription) => { el('bellDot').hidden = !subscription; })
@@ -355,6 +361,11 @@ document.addEventListener('visibilitychange', () => {
   if (load.lastAt && Date.now() - load.lastAt < 120000) return;
   load().catch(() => {});
 });
+
+// При првој посети нема шта да се покаже из кеша, а буђење успаваног
+// сервера уме да потраје, па корисник мора да зна да се нешто дешава.
+el('empty').hidden = false;
+el('empty').innerHTML = '<p>Учитавање јеловника…</p><p class="muted">Сервер се буди, то уме да потраје и двадесетак секунди.</p>';
 
 load().catch((error) => {
   el('empty').hidden = false;

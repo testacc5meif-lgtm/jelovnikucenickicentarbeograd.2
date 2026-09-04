@@ -1,4 +1,4 @@
-const CACHE = 'jelovnik-v1';
+const CACHE = 'jelovnik-v2';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest',
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 
@@ -14,6 +14,48 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+/** Јавља отвореним прозорима да је стигао свежији јеловник. */
+async function announceUpdate() {
+  const clients = await self.clients.matchAll({ type: 'window' });
+  for (const client of clients) client.postMessage({ type: 'menu-updated' });
+}
+
+/**
+ * Прво кеш, па освежавање у позадини.
+ *
+ * Бесплатан хостинг гаси услугу после петнаестак минута нерада, а буђење
+ * траје и по двадесет секунди. Без овога би корисник све то време гледао
+ * празан екран. Овако види јеловник одмах, а нови подаци стижу кад
+ * сервер оживи. Јеловник се мења двапут месечно, па је оно из кеша
+ * готово увек и тачно.
+ */
+async function cacheFirst(request, { notify = false } = {}) {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match(request);
+
+  const update = fetch(request)
+    .then(async (response) => {
+      if (!response.ok) return response;
+      const copy = response.clone();
+      if (notify && cached) {
+        const [before, after] = await Promise.all([cached.clone().text(), copy.clone().text()]);
+        await cache.put(request, copy);
+        if (before !== after) await announceUpdate();
+      } else {
+        await cache.put(request, copy);
+      }
+      return response;
+    })
+    .catch(() => null);
+
+  if (cached) return cached;
+
+  const fresh = await update;
+  if (fresh) return fresh;
+  if (request.mode === 'navigate') return (await cache.match('/index.html')) || Response.error();
+  return Response.error();
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -21,25 +63,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Прво мрежа, кеш као резерва када веза не ради. Тако корисник увек
-  // добија тачан јеловник и најновију верзију апликације, а офлајн и
-  // даље види последње виђено стање.
-  event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, copy));
-        }
-        return response;
-      })
-      .catch(async () => {
-        const cached = await caches.match(request);
-        if (cached) return cached;
-        if (request.mode === 'navigate') return caches.match('/index.html');
-        return Response.error();
-      }),
-  );
+  // Стање сервера и руте за распоред никад не иду из кеша.
+  if (url.pathname === '/health' || url.pathname.startsWith('/api/cron')) return;
+
+  event.respondWith(cacheFirst(request, { notify: url.pathname.startsWith('/api/') }));
 });
 
 self.addEventListener('push', (event) => {
