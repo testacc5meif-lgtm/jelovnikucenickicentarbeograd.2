@@ -230,13 +230,43 @@ function openSheet() {
   el('sheet').hidden = false;
 }
 
+/**
+ * Тражи дозволу за обавештења.
+ * Старији прегледачи враћају резултат кроз позивну функцију уместо кроз
+ * обећање, па су покривена оба облика.
+ */
+function askPermission() {
+  return new Promise((resolve) => {
+    try {
+      const maybe = Notification.requestPermission((result) => resolve(result));
+      if (maybe && typeof maybe.then === 'function') maybe.then(resolve, () => resolve('denied'));
+    } catch {
+      resolve('denied');
+    }
+  });
+}
+
+function remember(prefs) {
+  try {
+    localStorage.setItem('prefs', JSON.stringify(prefs));
+  } catch {
+    // Safari у приватном режиму одбија упис. Подешавања се тада не памте,
+    // али претплата и даље мора да прође.
+  }
+}
+
 async function saveSubscription() {
   const prefs = Object.fromEntries(state.meta.meals.map((meal) => [meal.key, el(`pref-${meal.key}`).checked]));
   state.prefs = prefs;
-  localStorage.setItem('prefs', JSON.stringify(prefs));
-
-  const registration = await navigator.serviceWorker.ready;
   const noneSelected = Object.values(prefs).every((value) => !value);
+
+  // Дозвола се тражи пре свега осталог, док кориснички додир још важи.
+  // Safari на iPhone-у одбија захтев који стигне после чекања на нешто
+  // друго, па би иза два await-а тихо пропао.
+  const permissionAsked = noneSelected ? null : askPermission();
+
+  remember(prefs);
+  const registration = await navigator.serviceWorker.ready;
 
   if (noneSelected) {
     const existing = await registration.pushManager.getSubscription();
@@ -252,7 +282,7 @@ async function saveSubscription() {
     return 'Обавештења су искључена.';
   }
 
-  const permission = await Notification.requestPermission();
+  const permission = await permissionAsked;
   if (permission !== 'granted') return 'Дозвола за обавештења није дата.';
 
   const subscription =

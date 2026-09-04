@@ -167,6 +167,9 @@ const files = [
   // Систем maskable икону сече у круг, па мотив мора да стане у ужи круг.
   ['icon-512-maskable.png', render(512, { scale: 0.72, bleed: true })],
   ['badge-96.png', render(96, { silhouette: true })],
+  // iPhone сам заобљава икону, па наши заобљени углови са провидношћу
+  // око њих испадну црни. Његова икона је зато пун квадрат.
+  ['apple-touch-icon.png', render(180, { scale: 0.86, bleed: true })],
   ['icon.svg', SVG],
 ];
 
