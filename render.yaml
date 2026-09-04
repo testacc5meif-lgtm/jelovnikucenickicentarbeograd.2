@@ -1,0 +1,53 @@
+# Опис услуге за Render. Може да се примени преко Blueprint-а, или да
+# послужи као списак онога што треба унети ручно при прављењу услуге.
+#
+# Вредности означене са `sync: false` Render не чита одавде него их тражи
+# од вас при постављању, јер су тајне и не смеју у репозиторијум.
+
+services:
+  - type: web
+    name: jelovnik
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+
+    envVars:
+      # Бесплатна услуга се успављује између захтева, па распоред не може
+      # да живи у процесу. Послове позива спољни сервис, преко /api/cron.
+      - key: SCHEDULER
+        value: "off"
+
+      - key: TZ_NAME
+        value: Europe/Belgrade
+
+      - key: SOURCE_URL
+        value: https://www.ucenickicentar-bg.rs/sluzba-ishrane/
+
+      # Адреса апликације, иде у обавештења. Уписати домен који Render
+      # додели, без косе црте на крају.
+      - key: PUBLIC_URL
+        sync: false
+
+      # Supabase, низ за повезивање са ознаком pooler
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: "true"
+
+      # Web Push. Пар се прави једном командом: npm run vapid
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
+
+      # Тајна коју спољни распоред шаље у заглављу x-cron-secret.
+      # Док је празна, руте под /api/cron не постоје.
+      - key: CRON_SECRET
+        generateValue: true
+
+      # Тајна за ручно окидање обраде преко /api/admin
+      - key: ADMIN_TOKEN
+        generateValue: true

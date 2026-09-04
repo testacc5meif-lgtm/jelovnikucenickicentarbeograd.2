@@ -236,3 +236,19 @@ test('распоред најава прати времена из подеша�
     assert.ok(meal.accusative, `оброку ${meal.key} недостаје облик за акузатив`);
   }
 });
+
+test('дан у недељи се рачуна из датума, не чита са скена', () => {
+  // Скен реч поред датума често прочита погрешно, а цифре готово никад.
+  const result = normalize({
+    period_from: '2026-09-01',
+    period_to: '2026-09-06',
+    allergens: '',
+    note: '',
+    days: [
+      { date: '2026-09-01', weekday: 'yropak', dorucak: ['чај'], rucak: [], vecera: [] },
+      { date: '2026-09-06', dorucak: ['чај'], rucak: [], vecera: [] },
+    ],
+  });
+  assert.equal(result.days[0].weekday, 'уторак');
+  assert.equal(result.days[1].weekday, 'недеља');
+});

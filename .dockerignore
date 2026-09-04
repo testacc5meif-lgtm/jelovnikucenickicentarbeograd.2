@@ -1,0 +1,28 @@
+# Зависности се инсталирају у слици, из lockfile-а
+node_modules/
+
+# Тајне никад не смеју у слику
+.env
+.env.*
+!.env.example
+
+# Локална база и језички подаци, оба се праве у слици
+data/
+tessdata/
+*.db
+*.db-shm
+*.db-wal
+
+# Историја, тестови и алати за развој нису потребни у раду
+.git/
+.gitignore
+.gitattributes
+test/
+scripts/dev-postgres.js
+
+# Дневници и фасцикле уредника
+*.log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -11,6 +11,7 @@ import { readWords } from './ocr.js';
 import { parsePage, parseFooter, assembleDays } from './table.js';
 import { buildLexicon, correctDay } from './dictionary.js';
 import { toCyrillic } from './translit.js';
+import { weekdayOf } from './dates.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SEED = path.join(here, '..', 'fixtures', 'jelovnik-2026-09-I.json');
@@ -48,7 +49,10 @@ export function normalize(parsed) {
     .filter((day) => ISO_DATE.test(day.date))
     .map((day) => ({
       date: day.date,
-      weekday: toCyrillic(String(day.weekday || '').trim().toLowerCase()),
+      // Дан у недељи се рачуна из датума, а не чита са скена. Датум је
+      // поуздан јер су то само цифре, док реч поред њега скен често
+      // прочита погрешно.
+      weekday: weekdayOf(day.date),
       dorucak: cleanList(day.dorucak),
       rucak: cleanList(day.rucak),
       vecera: cleanList(day.vecera),
