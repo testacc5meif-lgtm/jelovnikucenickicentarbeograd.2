@@ -45,6 +45,12 @@ async function load() {
   const data = await (await fetch(`/api/menu?from=${from}&to=${to}`)).json();
   state.days = new Map(data.days.map((day) => [day.date, day]));
 
+  // Сервер јавља кад служи последње успешно прочитане податке зато што
+  // база тренутно не одговара. Корисник то мора да зна, али без панике:
+  // јеловник се мења двапут месечно, па је то готово увек тачан податак.
+  state.stale = Boolean(state.meta.stale || data.stale);
+  state.staleSince = state.meta.staleSince || data.staleSince || null;
+
   const params = new URLSearchParams(location.search);
   const requested = params.get('dan');
   state.selected = state.days.has(requested)
@@ -119,8 +125,14 @@ function nextUp() {
 function renderDay() {
   const day = state.days.get(state.selected);
   const isToday = state.selected === state.meta.today;
+
+  const stale = state.stale
+    ? `<p class="stale">Приказ од ${state.staleSince ? new Date(state.staleSince).toLocaleString('sr-RS') : 'раније'}. `
+      + 'Веза са базом тренутно не ради, па подаци можда нису најновији.</p>'
+    : '';
+
   el('dayHead').innerHTML = `<h2>${isToday ? 'Данас' : WEEK_LONG[weekdayIndex(state.selected)]}, ${human(state.selected)}</h2>
-    <p>${isToday ? WEEK_LONG[weekdayIndex(state.selected)] : ''}</p>`;
+    <p>${isToday ? WEEK_LONG[weekdayIndex(state.selected)] : ''}</p>${stale}`;
 
   el('empty').hidden = Boolean(day);
   const container = el('meals');

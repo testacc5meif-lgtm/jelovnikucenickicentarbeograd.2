@@ -8,6 +8,7 @@ import { runIngest } from './ingest.js';
 import { sendMealTeaser, pushReady } from './push.js';
 import { checkOcr } from './ocr.js';
 import { cronRoutes } from './cron-routes.js';
+import { remember, recall } from './last-good.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(here, '..', 'public');
@@ -18,10 +19,35 @@ app.use(express.json({ limit: '32kb' }));
 
 /* ---------- Јавни API ---------- */
 
-app.get('/api/meta', async (req, res) => {
+/**
+ * Читање отпорно на кратак прекид базе.
+ *
+ * Кад упит не успе, враћа се последњи успешно прочитан одговор уз ознаку
+ * да су подаци застарели. Празан екран уз грешку је најгори исход, јер
+ * јеловник од јуче је готово увек и данашњи јеловник.
+ */
+async function serveRead(req, res, produce) {
+  const key = req.originalUrl;
+  try {
+    const data = await produce();
+    remember(key, data);
+    return res.json(data);
+  } catch (error) {
+    if (error.notFound) return res.status(404).json({ error: error.message });
+
+    console.error(`Читање није успело (${key}): ${error.message}`);
+    const fallback = recall(key);
+    if (fallback) {
+      return res.json({ ...fallback.data, stale: true, staleSince: fallback.at });
+    }
+    return res.status(503).json({ error: 'База тренутно није доступна', stale: true });
+  }
+}
+
+app.get('/api/meta', (req, res) => serveRead(req, res, async () => {
   const range = await store.dayRange();
   const source = await store.latestSource();
-  res.json({
+  return {
     vapidPublicKey: config.vapid.publicKey || null,
     pushEnabled: pushReady(),
     meals: MEAL_KEYS.map((key) => MEALS[key]),
@@ -37,22 +63,30 @@ app.get('/api/meta', async (req, res) => {
           url: source.url,
         }
       : null,
-  });
-});
+  };
+}));
 
-app.get('/api/menu', async (req, res) => {
+app.get('/api/menu', (req, res) => serveRead(req, res, async () => {
   const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : shiftDate(today(), -1);
   const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : shiftDate(today(), 14);
-  res.json({ from, to, days: await store.listDays(from, to) });
-});
+  return { from, to, days: await store.listDays(from, to) };
+}));
 
-app.get('/api/day/:date', async (req, res) => {
+app.get('/api/day/:date', (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) {
     return res.status(400).json({ error: 'Неисправан датум' });
   }
-  const day = await store.getDay(req.params.date);
-  if (!day) return res.status(404).json({ error: 'Нема јеловника за тај дан' });
-  res.json({ ...day, weekdayLabel: weekdayOf(day.date), humanDate: humanDate(day.date) });
+  return serveRead(req, res, async () => {
+    const day = await store.getDay(req.params.date);
+    // Недостатак јеловника за један дан је обичан исход, не квар, па се
+    // не памти као успешно читање и не приказује као застарео податак.
+    if (!day) {
+      const missing = new Error('Нема јеловника за тај дан');
+      missing.notFound = true;
+      throw missing;
+    }
+    return { ...day, weekdayLabel: weekdayOf(day.date), humanDate: humanDate(day.date) };
+  });
 });
 
 /* ---------- Претплате ---------- */
@@ -108,15 +142,34 @@ app.post('/api/admin/notify', requireAdmin, async (req, res) => {
 // Руте за спољни распоред постоје само кад је тајна подешена.
 if (config.cronSecret) app.use('/api/cron', cronRoutes());
 
+// Стање сервера мора да одговори и кад база не ради, иначе хостинг мисли
+// да је услуга мртва и гаси је баш кад треба да сачека да се база врати.
 app.get('/health', async (req, res) => {
-  res.json({
+  const db = await store.ready;
+  const body = {
     ok: true,
+    database: db.ok ? 'спремна' : `није спремна: ${db.reason}`,
     store: store.kind,
     scheduler: config.scheduler,
     cronRoutes: Boolean(config.cronSecret),
-    subscribers: await store.countSubscribers(),
-    range: await store.dayRange(),
-  });
+  };
+
+  try {
+    body.subscribers = await store.countSubscribers();
+    body.range = await store.dayRange();
+  } catch (error) {
+    body.database = `не одговара: ${error.message}`;
+  }
+
+  res.json(body);
+});
+
+// Свака неухваћена грешка у API рути враћа JSON, не HTML страну са
+// трагом извршавања. Express 5 сам прослеђује и грешке из async рута.
+app.use('/api', (error, req, res, next) => {
+  console.error(`Грешка у ${req.originalUrl}: ${error.message}`);
+  if (res.headersSent) return next(error);
+  return res.status(500).json({ error: 'Грешка на серверу' });
 });
 
 // Непостојећа API путања мора да врати 404, а не почетну страну.
@@ -138,6 +191,13 @@ app.get('/{*any}', (req, res) => res.sendFile(path.join(publicDir, 'index.html')
 
 if (process.env.NODE_ENV !== 'test') {
   const { startScheduler } = await import('./scheduler.js');
+
+  // Недоступна база не сме да обори процес: сервер креће, руте за читање
+  // се сналазе са последњим успешним одговором, а веза се сама поправи.
+  store.ready.then((db) => {
+    if (!db.ok) console.error(`Упозорење: база није спремна. ${db.reason}`);
+  });
+
   app.listen(config.port, () => {
     console.log(`Јеловник ради на http://localhost:${config.port}`);
     if (!config.vapid.publicKey) console.warn('Упозорење: VAPID кључеви нису подешени, нотификације су искључене.');
