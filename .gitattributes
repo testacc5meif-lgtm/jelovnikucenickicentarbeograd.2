@@ -1,0 +1,8 @@
+# Развој иде на Windows-у, а сервер је Linux. Без овога би сваки фајл
+# добио преломе редова оперативног система и разлике би биле неупотребљиве.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.traineddata binary
+*.pdf binary

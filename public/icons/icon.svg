@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Јеловник">
+  <rect width="512" height="512" rx="113" fill="#1d63d1"/>
+  <g fill="#fff">
+    <circle cx="256" cy="176.6" r="28.7"/>
+    <rect x="240.6" y="176.6" width="30.7" height="41"/>
+    <path d="M135.7 330.2 a120.3 120.3 0 0 1 240.6 0 z"/>
+    <rect x="89.6" y="330.2" width="332.8" height="36.4" rx="18.2"/>
+  </g>
+</svg>

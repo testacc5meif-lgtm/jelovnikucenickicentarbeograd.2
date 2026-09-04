@@ -1,0 +1,243 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --ink: #10141c;
+  --muted: #5c6675;
+  --line: #e3e7ee;
+  --accent: #1d63d1;
+  --accent-soft: #e7effc;
+  --warm: #b4531b;
+  --radius: 16px;
+  --safe: env(safe-area-inset-bottom, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --card: #161b23;
+    --ink: #e9edf3;
+    --muted: #93a0b1;
+    --line: #232a35;
+    --accent: #6ea8fe;
+    --accent-soft: #17233a;
+    --warm: #e8a06a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* Атрибут hidden мора да надјача display из правила испод. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.5 "Segoe UI", Roboto, system-ui, -apple-system, sans-serif;
+  padding-bottom: calc(28px + var(--safe));
+  -webkit-font-smoothing: antialiased;
+}
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 18px 16px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.top-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+
+h1 { margin: 0; font-size: 26px; letter-spacing: -.02em; }
+.sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+.bell {
+  position: relative;
+  flex: none;
+  width: 44px; height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.bell svg { width: 21px; height: 21px; fill: currentColor; }
+.bell .dot {
+  position: absolute; top: 8px; right: 9px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--warm);
+  border: 2px solid var(--card);
+}
+
+.upnext {
+  margin-top: 12px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.upnext { cursor: pointer; }
+.upnext b { font-weight: 650; }
+.upnext .cd { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding: 12px 16px;
+  scrollbar-width: none;
+}
+.strip::-webkit-scrollbar { display: none; }
+
+.chip {
+  scroll-snap-align: center;
+  flex: none;
+  min-width: 60px;
+  padding: 8px 10px;
+  border-radius: 13px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  text-align: center;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.25;
+}
+.chip small { display: block; font-size: 11px; color: var(--muted); }
+.chip strong { display: block; font-size: 17px; font-weight: 650; }
+.chip[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip[aria-selected="true"] small { color: #dbe7ff; }
+.chip.today:not([aria-selected="true"]) { border-color: var(--accent); }
+
+main { padding: 0 16px; }
+
+.dayhead { margin: 4px 0 14px; }
+.dayhead h2 { margin: 0; font-size: 19px; }
+.dayhead p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+.meals { display: grid; gap: 12px; }
+
+.meal {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 15px;
+}
+.meal.next { border-color: var(--accent); }
+
+.meal-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+.meal-head h3 { margin: 0; font-size: 16px; letter-spacing: .01em; }
+.meal-head .time {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.meal-head .ico { font-size: 18px; line-height: 1; }
+
+.meal ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+.meal li {
+  padding-left: 15px;
+  position: relative;
+  font-size: 15px;
+}
+.meal li::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 9px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: .55;
+}
+.meal .none { color: var(--muted); font-size: 14px; }
+
+.empty { text-align: center; padding: 40px 10px; }
+.empty p { margin: 4px 0; }
+.muted { color: var(--muted); font-size: 13px; }
+
+.foot {
+  margin: 24px 16px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12.5px;
+  display: grid;
+  gap: 7px;
+}
+.foot a { color: var(--accent); }
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(6, 10, 18, .55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.sheet-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  padding: 20px 18px calc(20px + var(--safe));
+  animation: rise .22s ease-out;
+}
+@keyframes rise { from { transform: translateY(18px); opacity: .6; } }
+.sheet-card h2 { margin: 0 0 6px; font-size: 19px; }
+
+.prefs { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 4px; }
+.prefs li { display: flex; align-items: center; gap: 11px; padding: 9px 2px; }
+.prefs label { flex: 1; }
+.prefs .when { color: var(--muted); font-size: 12.5px; }
+.prefs input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+.note {
+  margin: 12px 0 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+
+.sheet-actions { display: flex; gap: 9px; margin-top: 16px; }
+.btn {
+  flex: 1;
+  padding: 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btn[disabled] { opacity: .5; cursor: default; }
+
+/* На широком екрану садржај остаје у ширини читљивој као на телефону. */
+@media (min-width: 620px) {
+  body {
+    max-width: 560px;
+    margin: 0 auto;
+    border-inline: 1px solid var(--line);
+    min-height: 100vh;
+  }
+  .sheet { align-items: center; }
+  .sheet-card { border-radius: 20px; }
+}

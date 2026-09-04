@@ -1,0 +1,34 @@
+# Зависности
+node_modules/
+
+# Тајне: лозинка базе, VAPID приватни кључ, токени.
+# Само пример подешавања иде у репозиторијум.
+.env
+.env.*
+!.env.example
+
+# Локална база и привремени фајлови обраде
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Језички подаци за Tesseract, око 9 MB по језику.
+# Скидају се командом: npm run tessdata
+tessdata/
+
+# Дневници и извештаји
+*.log
+npm-debug.log*
+coverage/
+.nyc_output/
+
+# Уредници и оперативни системи
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

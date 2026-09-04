@@ -1,0 +1,35 @@
+{
+  "name": "jelovnik-uc",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Јеловник Ученичког центра Београд: аутоматско преузимање PDF-а, бесплатна OCR обрада, PWA приказ и push обавештења.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test \"test/*.test.js\"",
+    "ingest": "node scripts/ingest-once.js",
+    "seed": "node scripts/ingest-once.js --fixture fixtures/jelovnik-2026-09-I.json",
+    "verify": "node scripts/verify-ocr.js",
+    "vapid": "node scripts/gen-vapid.js",
+    "icons": "node scripts/gen-icons.js",
+    "notify:test": "node scripts/send-test.js",
+    "tessdata": "node scripts/fetch-tessdata.js",
+    "pg": "node scripts/dev-postgres.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "node-cron": "^4.2.1",
+    "pg": "^8.23.0",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "embedded-postgres": "^18.4.0-beta.17"
+  },
+  "allowScripts": {
+    "@embedded-postgres/windows-x64@18.4.0-beta.17": true
+  }
+}
