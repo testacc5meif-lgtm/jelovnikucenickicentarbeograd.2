@@ -12,6 +12,7 @@ import { parsePage, parseFooter, assembleDays } from './table.js';
 import { buildLexicon, correctDay } from './dictionary.js';
 import { toCyrillic } from './translit.js';
 import { weekdayOf } from './dates.js';
+import { acceptMenu } from './validate.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SEED = path.join(here, '..', 'fixtures', 'jelovnik-2026-09-I.json');
@@ -49,6 +50,9 @@ export function normalize(parsed) {
     .filter((day) => ISO_DATE.test(day.date))
     .map((day) => ({
       date: day.date,
+      // Несклад датума мора да преживи нормализацију, јер је то један од
+      // знакова да обрада више не прати документ.
+      ...(day.dateConflict ? { dateConflict: day.dateConflict } : {}),
       // Дан у недељи се рачуна из датума, а не чита са скена. Датум је
       // поуздан јер су то само цифре, док реч поред њега скен често
       // прочита погрешно.
@@ -70,27 +74,6 @@ export function normalize(parsed) {
     note: toCyrillic(String(parsed.note || '').trim()),
     days: unique,
   };
-}
-
-/**
- * Заставице за ручну проверу. Обрада никад не пуца тихо: ако дан изгледа
- * необично, означава се, па се погрешан јеловник не покаже као тачан.
- */
-function inspect(days) {
-  const warnings = [];
-
-  for (const day of days) {
-    if (day.dateConflict) {
-      warnings.push(`${day.date}: датум одступа од низа, редослед каже ${day.dateConflict}`);
-    }
-    for (const meal of MEALS) {
-      const count = (day[meal] || []).length;
-      if (count === 0) warnings.push(`${day.date}: ${meal} је празан`);
-      if (count > 14) warnings.push(`${day.date}: ${meal} има ${count} ставки, необично много`);
-    }
-  }
-
-  return warnings;
 }
 
 /**
@@ -127,10 +110,13 @@ export async function extractMenu(pdfBytes, { knownItems = [] } = {}) {
       days: corrected,
     });
 
+    const accepted = acceptMenu(menu);
+
     return {
       menu,
-      warnings: inspect(corrected),
-      stats: { pages: files.length, method, lexicon: lexicon.words.size },
+      accepted,
+      warnings: accepted.problems,
+      stats: { pages: files.length, method, lexicon: lexicon.words.size, ...accepted.stats },
     };
   } finally {
     cleanup(dir);

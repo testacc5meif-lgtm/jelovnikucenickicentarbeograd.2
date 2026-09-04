@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { config, MEALS, MEAL_KEYS } from './config.js';
 import * as store from './db.js';
 import { today, shiftDate, weekdayOf, humanDate } from './dates.js';
-import { runIngest } from './ingest.js';
+import { runIngest, lastIngest } from './ingest.js';
 import { sendMealTeaser, pushReady } from './push.js';
 import { checkOcr } from './ocr.js';
 import { cronRoutes } from './cron-routes.js';
@@ -152,6 +152,7 @@ app.get('/health', async (req, res) => {
     store: store.kind,
     scheduler: config.scheduler,
     cronRoutes: Boolean(config.cronSecret),
+    lastIngest: lastIngest(),
   };
 
   try {

@@ -282,3 +282,57 @@ test('наслов обавештења почиње називом оброка
     }
   }
 });
+
+/* ---------- Капија пред упис у базу ---------- */
+
+const { acceptMenu } = await import('../src/validate.js');
+
+const validMenu = () => JSON.parse(fs.readFileSync('./fixtures/jelovnik-2026-09-I.json', 'utf8'));
+
+test('исправан јеловник пролази проверу', () => {
+  const menu = normalize(validMenu());
+  const verdict = acceptMenu(menu);
+  assert.equal(verdict.ok, true, `одбијено без разлога: ${verdict.problems.join('; ')}`);
+  assert.equal(verdict.stats.days, 15);
+});
+
+test('празан оброк зауставља упис', () => {
+  // Најјаснији знак да подела на колоне више не ваља.
+  const raw = validMenu();
+  raw.days[3].rucak = [];
+  const verdict = acceptMenu(normalize(raw));
+  assert.equal(verdict.ok, false);
+  assert.ok(verdict.problems.some((p) => p.includes('празан оброк')), verdict.problems.join('; '));
+});
+
+test('све колоне слепљене у једну зауставља упис', () => {
+  // Ако распоред колона у PDF-у падне, све ставке заврше у првој колони.
+  const raw = validMenu();
+  for (const day of raw.days) {
+    day.dorucak = [...day.dorucak, ...day.rucak, ...day.vecera];
+    day.rucak = [];
+    day.vecera = [];
+  }
+  assert.equal(acceptMenu(normalize(raw)).ok, false);
+});
+
+test('премало прочитаних дана зауставља упис', () => {
+  const raw = validMenu();
+  raw.days = raw.days.slice(0, 3);
+  const verdict = acceptMenu(normalize(raw));
+  assert.equal(verdict.ok, false);
+  assert.ok(verdict.problems.some((p) => p.includes('дана')), verdict.problems.join('; '));
+});
+
+test('несклад датума зауставља упис', () => {
+  const menu = normalize(validMenu());
+  menu.days[5].dateConflict = '2026-09-99';
+  const verdict = acceptMenu(menu);
+  assert.equal(verdict.ok, false);
+  assert.ok(verdict.problems.some((p) => p.includes('датум')), verdict.problems.join('; '));
+});
+
+test('потпуно празан резултат зауставља упис', () => {
+  assert.equal(acceptMenu({ days: [] }).ok, false);
+  assert.equal(acceptMenu(null).ok, false);
+});

@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { config, MEALS, MEAL_KEYS } from './config.js';
 import { checkSource, notifyMeal, targetDate } from './jobs.js';
+import { lastIngest } from './ingest.js';
 
 const stamp = () => new Date().toISOString();
 const log = (...parts) => console.log(`[${stamp()}]`, ...parts);
@@ -69,6 +70,14 @@ export function cronRoutes() {
     return background(`најава: ${MEALS[meal].label}`, () => notifyMeal(meal))(req, res, next);
   });
 
+  // Сигнал за спољни надзор. Враћа грешку кад је последња обрада одбијена,
+  // да сервис за распоред пошаље обавештење уместо да квар прође тихо.
+  both('/status', (req, res) => {
+    const last = lastIngest();
+    const failed = last.status === 'одбијено';
+    res.status(failed ? 500 : 200).json({ ok: !failed, lastIngest: last });
+  });
+
   // Преглед онога што спољни распоред треба да позива, да поставка не мора
   // да се преписује ручно из кода.
   router.get('/plan', (req, res) => {
@@ -77,6 +86,7 @@ export function cronRoutes() {
       header: 'x-cron-secret',
       jobs: [
         { path: '/api/cron/ingest', cron: config.checkCron, opis: 'провера сајта и обрада новог јеловника' },
+        { path: '/api/cron/status', cron: '20 9 * * *', opis: 'надзор: враћа грешку ако је последња обрада одбијена' },
         ...Object.values(MEALS).flatMap((meal) => {
           const [hour, minute] = meal.notifyAt.split(':').map(Number);
           const wake = (hour * 60 + minute - 5 + 1440) % 1440;
