@@ -191,6 +191,16 @@ app.use(
   }),
 );
 
+// Најчешћа грешка у поставци спољног распореда је изостављен део "/api".
+// Без овога такав захтев добије целу HTML страну и изгледа као да је
+// успео, а посао се уопште не изврши. Овако одмах каже шта не ваља.
+app.all('/cron{/*any}', (req, res) => {
+  res.status(404).json({
+    error: 'Погрешна путања',
+    ispravno: `${config.publicUrl}/api/cron${req.path.replace(/^\/cron/, '')}`,
+  });
+});
+
 app.get('/{*any}', (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
 if (process.env.NODE_ENV !== 'test') {
