@@ -158,6 +158,9 @@ app.get('/health', async (req, res) => {
   try {
     body.subscribers = await store.countSubscribers();
     body.range = await store.dayRange();
+    // Без овога се пропуштена најава не види споља, него се о њој само
+    // нагађа. Дневник каже да ли је слање уопште покушано.
+    body.recentSends = await store.recentSends();
   } catch (error) {
     body.database = `не одговара: ${error.message}`;
   }

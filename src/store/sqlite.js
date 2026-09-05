@@ -192,6 +192,11 @@ export async function alreadySent(meal, date) {
   return Boolean(db.prepare('SELECT 1 FROM sent_log WHERE meal = ? AND date = ?').get(meal, date));
 }
 
+/** Последња слања, за преглед преко /health. */
+export async function recentSends(limit = 6) {
+  return db.prepare('SELECT meal, date, sent_at, total, failed FROM sent_log ORDER BY sent_at DESC LIMIT ?').all(limit);
+}
+
 export async function logSend(meal, date, total, failed) {
   db.prepare(`
     INSERT INTO sent_log (meal, date, sent_at, total, failed) VALUES (?, ?, ?, ?, ?)

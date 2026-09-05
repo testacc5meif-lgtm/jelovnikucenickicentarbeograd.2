@@ -273,6 +273,15 @@ export async function alreadySent(meal, date) {
   return Boolean(row);
 }
 
+/** Последња слања, за преглед преко /health. */
+export async function recentSends(limit = 6) {
+  const { rows } = await query(
+    'SELECT meal, date, sent_at, total, failed FROM sent_log ORDER BY sent_at DESC LIMIT $1',
+    [limit],
+  );
+  return rows;
+}
+
 export async function logSend(meal, date, total, failed) {
   await query(
     `INSERT INTO sent_log (meal, date, sent_at, total, failed) VALUES ($1, $2, now(), $3, $4)

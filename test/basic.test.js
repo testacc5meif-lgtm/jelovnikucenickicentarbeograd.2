@@ -336,3 +336,15 @@ test('потпуно празан резултат зауставља упис',
   assert.equal(acceptMenu({ days: [] }).ok, false);
   assert.equal(acceptMenu(null).ok, false);
 });
+
+test('пробно слање не улази у дневник и не чепи прави термин', async () => {
+  // Проба послата у поноћ уписивала се у дневник, па је редовна најава у
+  // 10:30 видела да је за тај дан већ послато и прескочила. Тако је и
+  // пропуштена најава за ручак 5. септембра.
+  const source = String(fs.readFileSync('./src/push.js', 'utf8'));
+  assert.match(
+    source,
+    /if \(!force\) await store\.logSend\(/,
+    'пробно слање не сме да уписује у дневник слања',
+  );
+});

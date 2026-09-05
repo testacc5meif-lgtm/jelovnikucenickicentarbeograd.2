@@ -39,7 +39,13 @@ async function sendOne(row, payload) {
 
 /**
  * Шаље најаву за један оброк одређеног дана.
+ *
  * Не шаље ништа ако мени за тај дан не постоји или је најава већ послата.
+ * Дневник слања је та брана против двоструке најаве.
+ *
+ * Пробно слање (`force`) намерно **не** улази у дневник. Иначе би проба
+ * зачепила прави термин: пошаљеш пробу у поноћ, а редовна најава у 10:30
+ * види да је за тај дан већ послато и прескочи. То се и десило.
  */
 export async function sendMealTeaser(mealKey, targetDate, { force = false } = {}) {
   if (!ensureConfigured()) return { skipped: 'VAPID кључеви нису подешени' };
@@ -61,7 +67,7 @@ export async function sendMealTeaser(mealKey, targetDate, { force = false } = {}
   const rows = await store.subscribersFor(mealKey);
   const results = await Promise.all(rows.map((row) => sendOne(row, payload)));
   const failed = results.filter((result) => !result.ok).length;
-  await store.logSend(mealKey, targetDate, rows.length, failed);
+  if (!force) await store.logSend(mealKey, targetDate, rows.length, failed);
 
-  return { meal: mealKey, date: targetDate, total: rows.length, failed, title: payload.title };
+  return { meal: mealKey, date: targetDate, total: rows.length, failed, title: payload.title, forced: force };
 }
