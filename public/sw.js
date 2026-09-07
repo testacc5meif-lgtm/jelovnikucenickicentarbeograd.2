@@ -1,4 +1,4 @@
-const CACHE = 'jelovnik-v2';
+const CACHE = 'jelovnik-v3';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest',
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 
@@ -29,7 +29,7 @@ async function announceUpdate() {
  * сервер оживи. Јеловник се мења двапут месечно, па је оно из кеша
  * готово увек и тачно.
  */
-async function cacheFirst(request, { notify = false } = {}) {
+async function cacheFirst(request, { notify = false, done = () => {} } = {}) {
   const cache = await caches.open(CACHE);
   const cached = await cache.match(request);
 
@@ -46,7 +46,10 @@ async function cacheFirst(request, { notify = false } = {}) {
       }
       return response;
     })
-    .catch(() => null);
+    .catch(() => null)
+    // Прегледач сме да угаси service worker чим одговор оде кориснику.
+    // Тек кад ово јави да је готово, освежавање је стварно завршено.
+    .finally(done);
 
   if (cached) return cached;
 
@@ -66,7 +69,17 @@ self.addEventListener('fetch', (event) => {
   // Стање сервера и руте за распоред никад не иду из кеша.
   if (url.pathname === '/health' || url.pathname.startsWith('/api/cron')) return;
 
-  event.respondWith(cacheFirst(request, { notify: url.pathname.startsWith('/api/') }));
+  // Одговор иде из кеша одмах, али освежавање тече и после тога. Без овог
+  // продужетка живота прегледач га прекине чим пошаље одговор, па кеш
+  // остане заувек стар. Тако је телефон и после промене времена најаве
+  // наставио да приказује старо.
+  let finished;
+  event.waitUntil(new Promise((resolve) => { finished = resolve; }));
+
+  event.respondWith(cacheFirst(request, {
+    notify: url.pathname.startsWith('/api/'),
+    done: finished,
+  }));
 });
 
 self.addEventListener('push', (event) => {
