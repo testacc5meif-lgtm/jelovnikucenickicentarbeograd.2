@@ -222,8 +222,8 @@ test('ред слабог читања се не лепи за претходн�
 const { targetDate } = await import('../src/jobs.js');
 const { MEALS } = await import('../src/config.js');
 
-test('најава у 22:00 циља сутрашњи доручак, остале данашњи оброк', () => {
-  const veče = new Date('2026-09-03T20:00:00Z'); // 22:00 по београдском
+test('вечерња најава циља сутрашњи доручак, остале данашњи оброк', () => {
+  const veče = new Date('2026-09-03T20:30:00Z'); // 22:30 по београдском
   assert.equal(targetDate('dorucak', veče), '2026-09-04');
 
   const podne = new Date('2026-09-04T08:30:00Z');
@@ -238,7 +238,7 @@ test('најава доручка прелази у наредни месец', 
 test('распоред најава прати времена из подешавања оброка', () => {
   // Ако се време оброка промени, распоред и приказ у апликацији морају
   // да се помере заједно, јер обоје читају исти извор.
-  assert.equal(MEALS.dorucak.notifyAt, '22:00');
+  assert.equal(MEALS.dorucak.notifyAt, '22:30');
   assert.equal(MEALS.rucak.notifyAt, '10:30');
   assert.equal(MEALS.vecera.notifyAt, '17:30');
   for (const meal of Object.values(MEALS)) {
