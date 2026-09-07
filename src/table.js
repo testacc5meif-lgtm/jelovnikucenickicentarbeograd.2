@@ -193,6 +193,23 @@ function splitColumns(words, headerX) {
  */
 const NEXT_LABEL = /^(АЛЕРГО|НАПОМЕНА|ЈЕЛОВНИК|Јеловник|Верзија|Страница)/i;
 
+/**
+ * Скида отргнуто слово са краја.
+ *
+ * Испод табеле стоје потписи и линије, а скен из њих понекад отргне
+ * усамљено слово и залепи га за крај напомене, па је испадало
+ * "...ДО ИЗМЕНЕ ЈЕЛОВНИКА. И". Скидају се два облика: реч од једног или
+ * два слова иза тачке, и усамљено слово на самом крају. Ниједан алерген
+ * ни српска реченица не завршавају се једним словом.
+ */
+function trimTail(text) {
+  return text
+    .replace(/([.!?])\s+\p{L}{1,2}\s*$/u, '$1')
+    .replace(/\s+\p{L}\s*$/u, '')
+    .replace(/[\s,;:]+$/u, '')
+    .trim();
+}
+
 export function parseFooter(allWords) {
   const lines = toLines(allWords);
 
@@ -210,11 +227,13 @@ export function parseFooter(allWords) {
       text += ` ${lines[i].text}`;
     }
 
-    return text
-      .replace(label, '')
-      .replace(/^\s*:?\s*/, '')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
+    return trimTail(
+      text
+        .replace(label, '')
+        .replace(/^\s*:?\s*/, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim(),
+    );
   };
 
   return {
