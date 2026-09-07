@@ -30,11 +30,18 @@ function requireSecret(req, res, next) {
       метод: req.method,
       исход: given ? 'погрешна тајна' : 'тајна није послата',
     });
-    return res.status(401).json({ error: 'Неисправна тајна' });
+    return res.status(401).json(NOT_OK);
   }
   note({ путања: req.originalUrl, метод: req.method, исход: 'прихваћено' });
   return next();
 }
+
+// Сваки одговор овде је најмањи могући. Сервиси за распоред одбијају
+// одговоре преко неколико стотина бајтова уз поруку да је излаз превелик,
+// а посао тада изгледа као да је пао иако је уредно одрађен. Шта се
+// стварно десило види се у /health, не у одговору.
+const OK = { ok: true };
+const NOT_OK = { ok: false };
 
 /**
  * Одговара одмах, па тек онда ради посао.
@@ -43,10 +50,13 @@ function requireSecret(req, res, next) {
  * а буђење уме да потраје. Сервиси за распоред прекидају везу после
  * тридесетак секунди. Зато одговор не чека да посао заврши: важно је да
  * захтев пробуди процес, а исход стиже у дневник.
+ *
+ * Одговор је 200, а не 202, јер поједини сервиси за распоред прихватају
+ * само 200 као успех.
  */
 function background(name, task) {
   return (req, res) => {
-    res.status(202).json({ accepted: name, at: stamp() });
+    res.json(OK);
     Promise.resolve()
       .then(task)
       .then((result) => log(`${name}:`, JSON.stringify(result)))
@@ -66,24 +76,21 @@ export function cronRoutes() {
 
   // Буђење пред најаву, да процес не крене из хладног стања баш у тренутку
   // када треба да пошаље обавештења.
-  both('/wake', (req, res) => res.json({ awake: true, at: stamp() }));
+  both('/wake', (req, res) => res.json(OK));
 
   both('/ingest', background('провера извора', () => checkSource({ log })));
 
   both('/notify/:meal', (req, res, next) => {
     const meal = req.params.meal;
-    if (!MEAL_KEYS.includes(meal)) {
-      return res.status(400).json({ error: `Непознат оброк: ${meal}`, poznati: MEAL_KEYS });
-    }
+    if (!MEAL_KEYS.includes(meal)) return res.status(400).json(NOT_OK);
     return background(`најава: ${MEALS[meal].label}`, () => notifyMeal(meal))(req, res, next);
   });
 
   // Сигнал за спољни надзор. Враћа грешку кад је последња обрада одбијена,
   // да сервис за распоред пошаље обавештење уместо да квар прође тихо.
   both('/status', (req, res) => {
-    const last = lastIngest();
-    const failed = last.status === 'одбијено';
-    res.status(failed ? 500 : 200).json({ ok: !failed, lastIngest: last });
+    const failed = lastIngest().status === 'одбијено';
+    res.status(failed ? 500 : 200).json(failed ? NOT_OK : OK);
   });
 
   // Преглед онога што спољни распоред треба да позива, да поставка не мора
@@ -95,6 +102,7 @@ export function cronRoutes() {
       jobs: [
         { path: '/api/cron/ingest', cron: config.checkCron, opis: 'провера сајта и обрада новог јеловника' },
         { path: '/api/cron/status', cron: '20 9 * * *', opis: 'надзор: враћа грешку ако је последња обрада одбијена' },
+        { path: '/ping', cron: '*/10 5-23 * * *', opis: 'држи услугу будном, без тајне' },
         ...Object.values(MEALS).flatMap((meal) => {
           const [hour, minute] = meal.notifyAt.split(':').map(Number);
           const wake = (hour * 60 + minute - 5 + 1440) % 1440;
