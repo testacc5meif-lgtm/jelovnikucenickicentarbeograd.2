@@ -9,6 +9,7 @@ import { sendMealTeaser, pushReady } from './push.js';
 import { checkOcr } from './ocr.js';
 import { cronRoutes } from './cron-routes.js';
 import { remember, recall } from './last-good.js';
+import { note, recent as recentCalls } from './access-log.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(here, '..', 'public');
@@ -153,6 +154,9 @@ app.get('/health', async (req, res) => {
     scheduler: config.scheduler,
     cronRoutes: Boolean(config.cronSecret),
     lastIngest: lastIngest(),
+    // Позиви спољног распореда, да се види стиже ли захтев уопште и
+    // да ли пролази проверу тајне.
+    cronCalls: recentCalls(),
   };
 
   try {
@@ -195,6 +199,7 @@ app.use(
 // Без овога такав захтев добије целу HTML страну и изгледа као да је
 // успео, а посао се уопште не изврши. Овако одмах каже шта не ваља.
 app.all('/cron{/*any}', (req, res) => {
+  note({ путања: req.originalUrl, метод: req.method, исход: 'погрешна путања, недостаје /api' });
   res.status(404).json({
     error: 'Погрешна путања',
     ispravno: `${config.publicUrl}/api/cron${req.path.replace(/^\/cron/, '')}`,

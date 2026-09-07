@@ -10,6 +10,7 @@ import { Router } from 'express';
 import { config, MEALS, MEAL_KEYS } from './config.js';
 import { checkSource, notifyMeal, targetDate } from './jobs.js';
 import { lastIngest } from './ingest.js';
+import { note } from './access-log.js';
 
 const stamp = () => new Date().toISOString();
 const log = (...parts) => console.log(`[${stamp()}]`, ...parts);
@@ -22,9 +23,16 @@ function sameSecret(given, expected) {
 }
 
 function requireSecret(req, res, next) {
-  if (!sameSecret(req.get('x-cron-secret'), config.cronSecret)) {
+  const given = req.get('x-cron-secret');
+  if (!sameSecret(given, config.cronSecret)) {
+    note({
+      путања: req.originalUrl,
+      метод: req.method,
+      исход: given ? 'погрешна тајна' : 'тајна није послата',
+    });
     return res.status(401).json({ error: 'Неисправна тајна' });
   }
+  note({ путања: req.originalUrl, метод: req.method, исход: 'прихваћено' });
   return next();
 }
 
