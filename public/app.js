@@ -101,8 +101,22 @@ function renderStrip() {
   }
   // Трака се помера само водоравно. scrollIntoView би овде повукао и целу
   // страницу навише, што квари долазак из обавештења на одређени оброк.
-  const active = strip.querySelector('[aria-selected="true"]');
-  if (active) strip.scrollLeft = active.offsetLeft - (strip.clientWidth - active.offsetWidth) / 2;
+  //
+  // Рачуна се двапут: одмах, и после исцртавања. При првом позиву трака
+  // још нема ширину, па би израчун одгурао изабрани дан ван видљивог дела.
+  // Мере се стварни положаји, не offsetLeft. Он се рачуна у односу на
+  // најближег позиционираног претка, па на широком екрану, где је садржај
+  // центриран, укључи и леву маргину и израчун промаши за пола екрана.
+  const centre = () => {
+    const active = strip.querySelector('[aria-selected="true"]');
+    if (!active || strip.clientWidth === 0) return;
+    const box = strip.getBoundingClientRect();
+    const chip = active.getBoundingClientRect();
+    const offset = (chip.left - box.left) - (strip.clientWidth - chip.width) / 2;
+    strip.scrollLeft = Math.max(0, strip.scrollLeft + offset);
+  };
+  centre();
+  requestAnimationFrame(centre);
 }
 
 /**
@@ -140,19 +154,40 @@ function renderDay() {
   if (!day) return;
 
   const next = nextUp();
+  const minutesNow = new Date().getHours() * 60 + new Date().getMinutes();
+
   for (const meal of state.meta.meals) {
     const items = day.meals[meal.key] || [];
-    const card = document.createElement('section');
+    const [h, m] = meal.startsAt.split(':').map(Number);
+
     const isNext = next.date === state.selected && next.meal.key === meal.key;
-    card.className = 'meal' + (isNext ? ' next' : '');
+    const isPast = isToday && !isNext && minutesNow >= h * 60 + m;
+
+    const card = document.createElement('section');
+    card.className = 'meal' + (isNext ? ' next' : '') + (isPast ? ' past' : '');
     card.id = `meal-${meal.key}`;
+
     const list = items.length
       ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
       : '<p class="none">Није предвиђено.</p>';
+
+    // Ознака поред наслова говори у ком је стању оброк, да се не мора
+    // рачунати из сата. Одбројавање се освежава истим тајмером као трака.
+    const mark = isNext
+      ? `<span class="mark next" data-countdown="${meal.key}">${untilText(next.minutesAway)}</span>`
+      : isPast ? '<span class="mark past">било</span>' : '';
+
     card.innerHTML = `<div class="meal-head"><span class="ico" aria-hidden="true">${ICONS[meal.key]}</span>`
-      + `<h3>${meal.label}</h3><span class="time">од ${meal.startsAt}</span></div>${list}`;
+      + `<h3>${meal.label}</h3>${mark}<span class="time">од ${meal.startsAt}</span></div>${list}`;
     container.append(card);
   }
+}
+
+/** "за 1 ч 20 мин", или "сада" кад је време стигло. */
+function untilText(minutes) {
+  if (minutes <= 0) return 'сада';
+  const hours = Math.floor(minutes / 60);
+  return `за ${hours > 0 ? `${hours} ч ` : ''}${minutes % 60} мин`;
 }
 
 function renderUpNext() {
@@ -167,10 +202,13 @@ function renderUpNext() {
     }
     box.hidden = false;
     state.next = next;
-    const hours = Math.floor(next.minutesAway / 60);
     const when = next.date === state.meta.today ? '' : 'сутра ';
     box.innerHTML = `<span>Следећи оброк: <b>${next.meal.label}</b> ${when}у ${next.meal.startsAt}</span>`
-      + `<span class="cd">за ${hours > 0 ? `${hours} ч ` : ''}${next.minutesAway % 60} мин</span>`;
+      + `<span class="cd">${untilText(next.minutesAway)}</span>`;
+
+    // Одбројавање на самој картици прати исти откуцај.
+    const badge = document.querySelector(`.mark.next[data-countdown="${next.meal.key}"]`);
+    if (badge) badge.textContent = untilText(next.minutesAway);
   };
 
   tick();
