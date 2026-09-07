@@ -82,8 +82,17 @@ export function cronRoutes() {
 
   both('/notify/:meal', (req, res, next) => {
     const meal = req.params.meal;
-    if (!MEAL_KEYS.includes(meal)) return res.status(400).json(NOT_OK);
-    return background(`најава: ${MEALS[meal].label}`, () => notifyMeal(meal))(req, res, next);
+    if (!MEAL_KEYS.includes(meal)) {
+      note({ путања: req.originalUrl, метод: req.method, исход: `непознат оброк: ${meal}` });
+      return res.status(400).json(NOT_OK);
+    }
+
+    // Уз ?probno=1 обавештење се шаље, али се не уписује у дневник, па
+    // прави термин остаје слободан. Служи да се поставка провери одмах,
+    // уместо чекања на заказано време.
+    const probno = req.query.probno === '1';
+    const naziv = `најава: ${MEALS[meal].label}${probno ? ' (проба)' : ''}`;
+    return background(naziv, () => notifyMeal(meal, { force: probno }))(req, res, next);
   });
 
   // Сигнал за спољни надзор. Враћа грешку кад је последња обрада одбијена,

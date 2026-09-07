@@ -79,3 +79,14 @@ test('погрешна путања без /api такође враћа мали
 test.after(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
+
+test('проба најаве не троши прави термин', async () => {
+  // Обе руте морају да остану мале, а проба не сме да упише у дневник,
+  // иначе би провера поставке обеснажила вечерашњу праву најаву.
+  const probno = await measure('/api/cron/notify/dorucak?probno=1');
+  assert.equal(probno.status, 200);
+  assert.ok(probno.size <= LIMIT, `${probno.size} бајтова`);
+
+  const source = String(await import('node:fs').then((fs) => fs.readFileSync('./src/cron-routes.js', 'utf8')));
+  assert.match(source, /force: probno/, 'проба мора да иде као форсирано слање, које не улази у дневник');
+});
