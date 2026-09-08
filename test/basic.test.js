@@ -396,3 +396,14 @@ test('поправка подножја мења већ уписан запис 
   const drugi = await tidyStoredFooter({ log: () => {} });
   assert.equal(drugi.changed, false, 'поновно покретање не сме ништа да мења');
 });
+
+test('датум се не чита из кешираног одговора сервера', () => {
+  // /api/meta стоји у кешу прегледача, па би апликација сутра и даље
+  // мислила да је јуче. Датум и час се зато рачунају на самом уређају,
+  // у зони установе.
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  assert.ok(!app.includes('state.meta.today'), 'датум не сме да долази из /api/meta');
+  assert.match(app, /function nowThere\(\)/, 'мора да постоји рачунање датума у зони установе');
+  assert.match(app, /timeZone: zone/, 'рачунање мора да поштује зону, не сат уређаја');
+  assert.ok(!app.includes('new Date().getHours()'), 'час се не сме узимати са сата уређаја');
+});

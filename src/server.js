@@ -53,6 +53,7 @@ app.get('/api/meta', (req, res) => serveRead(req, res, async () => {
     vapidPublicKey: config.vapid.publicKey || null,
     pushEnabled: pushReady(),
     meals: MEAL_KEYS.map((key) => MEALS[key]),
+    timezone: config.tz,
     today: today(),
     range,
     source: source

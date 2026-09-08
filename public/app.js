@@ -3,6 +3,8 @@ const WEEK_SHORT = ['нед', 'пон', 'уто', 'сре', 'чет', 'пет', 
 const WEEK_LONG = ['недеља', 'понедељак', 'уторак', 'среда', 'четвртак', 'петак', 'субота'];
 const MONTHS = ['јануар', 'фебруар', 'март', 'април', 'мај', 'јун', 'јул', 'август', 'септембар', 'октобар', 'новембар', 'децембар'];
 
+const TZ_FALLBACK = 'Europe/Belgrade';
+
 const el = (id) => document.getElementById(id);
 const state = { meta: null, days: new Map(), selected: null, prefs: { dorucak: true, rucak: true, vecera: true } };
 
@@ -23,6 +25,30 @@ const human = (iso) => {
   return `${d}. ${MONTHS[m - 1]}`;
 };
 
+/**
+ * Тренутни датум и час у зони установе.
+ *
+ * Не сме да се узима из /api/meta, јер тај одговор стоји у кешу, па би
+ * апликација сутра и даље мислила да је јуче. Ни сат телефона не ваља,
+ * јер уређај може да буде у другој зони, а оброци се служе по београдском
+ * времену.
+ */
+function nowThere() {
+  const zone = state.meta?.timezone || TZ_FALLBACK;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: zone,
+    hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  }).formatToParts(new Date());
+
+  const at = (type) => parts.find((part) => part.type === type).value;
+  return {
+    date: `${at('year')}-${at('month')}-${at('day')}`,
+    minutes: Number(at('hour')) * 60 + Number(at('minute')),
+  };
+}
+
 function escapeHtml(text) {
   return String(text).replace(/[&<>"']/g, (ch) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -36,11 +62,12 @@ async function load() {
   const keepScroll = window.scrollY;
 
   state.meta = await (await fetch('/api/meta')).json();
+  state.today = nowThere().date;
   const first = state.meta.range?.first;
   const last = state.meta.range?.last;
-  const floor = shift(state.meta.today, -3);
-  const from = first ? (first > floor ? first : floor) : state.meta.today;
-  const to = last || shift(state.meta.today, 14);
+  const floor = shift(state.today, -3);
+  const from = first ? (first > floor ? first : floor) : state.today;
+  const to = last || shift(state.today, 14);
 
   const data = await (await fetch(`/api/menu?from=${from}&to=${to}`)).json();
   state.days = new Map(data.days.map((day) => [day.date, day]));
@@ -55,9 +82,9 @@ async function load() {
   const requested = params.get('dan');
   state.selected = state.days.has(requested)
     ? requested
-    : state.days.has(state.meta.today)
-      ? state.meta.today
-      : [...state.days.keys()][0] || state.meta.today;
+    : state.days.has(state.today)
+      ? state.today
+      : [...state.days.keys()][0] || state.today;
 
   renderStrip();
   renderDay();
@@ -87,12 +114,12 @@ function renderStrip() {
   for (const date of state.days.keys()) {
     const chip = document.createElement('button');
     chip.type = 'button';
-    chip.className = 'chip' + (date === state.meta.today ? ' today' : '');
+    chip.className = 'chip' + (date === state.today ? ' today' : '');
     chip.setAttribute('aria-selected', String(date === state.selected));
     chip.innerHTML = `<small>${WEEK_SHORT[weekdayIndex(date)]}</small><strong>${Number(date.slice(8))}</strong>`;
     chip.addEventListener('click', () => {
       state.selected = date;
-      history.replaceState(null, '', date === state.meta.today ? '/' : `/?dan=${date}`);
+      history.replaceState(null, '', date === state.today ? '/' : `/?dan=${date}`);
       renderStrip();
       renderDay();
       renderUpNext();
@@ -124,13 +151,12 @@ function renderStrip() {
  * прелази на сутрашњи доручак, исто као што ради и вечерње обавештење.
  */
 function nextUp() {
-  const now = new Date();
-  const minutes = now.getHours() * 60 + now.getMinutes();
+  const { date, minutes } = nowThere();
   for (const meal of state.meta.meals) {
     const [h, m] = meal.startsAt.split(':').map(Number);
-    if (minutes < h * 60 + m) return { date: state.meta.today, meal, minutesAway: h * 60 + m - minutes };
+    if (minutes < h * 60 + m) return { date, meal, minutesAway: h * 60 + m - minutes };
   }
-  const tomorrow = shift(state.meta.today, 1);
+  const tomorrow = shift(date, 1);
   const first = state.meta.meals[0];
   const [h, m] = first.startsAt.split(':').map(Number);
   return { date: tomorrow, meal: first, minutesAway: 24 * 60 - minutes + h * 60 + m };
@@ -138,7 +164,7 @@ function nextUp() {
 
 function renderDay() {
   const day = state.days.get(state.selected);
-  const isToday = state.selected === state.meta.today;
+  const isToday = state.selected === state.today;
 
   const stale = state.stale
     ? `<p class="stale">Приказ од ${state.staleSince ? new Date(state.staleSince).toLocaleString('sr-RS') : 'раније'}. `
@@ -154,7 +180,7 @@ function renderDay() {
   if (!day) return;
 
   const next = nextUp();
-  const minutesNow = new Date().getHours() * 60 + new Date().getMinutes();
+  const minutesNow = nowThere().minutes;
 
   for (const meal of state.meta.meals) {
     const items = day.meals[meal.key] || [];
@@ -195,6 +221,11 @@ function renderUpNext() {
   clearInterval(renderUpNext.timer);
 
   const tick = () => {
+    // Понoћ затиче апликацију отворену, па дан мора сам да се преврне.
+    if (nowThere().date !== state.today) {
+      load().catch(() => {});
+      return;
+    }
     const next = nextUp();
     if (!state.days.has(next.date)) {
       box.hidden = true;
@@ -202,7 +233,7 @@ function renderUpNext() {
     }
     box.hidden = false;
     state.next = next;
-    const when = next.date === state.meta.today ? '' : 'сутра ';
+    const when = next.date === state.today ? '' : 'сутра ';
     box.innerHTML = `<span>Следећи оброк: <b>${next.meal.label}</b> ${when}у ${next.meal.startsAt}</span>`
       + `<span class="cd">${untilText(next.minutesAway)}</span>`;
 
@@ -360,7 +391,7 @@ el('upNext').addEventListener('click', () => {
   const next = state.next;
   if (!next || !state.days.has(next.date)) return;
   state.selected = next.date;
-  history.replaceState(null, '', next.date === state.meta.today ? '/' : `/?dan=${next.date}`);
+  history.replaceState(null, '', next.date === state.today ? '/' : `/?dan=${next.date}`);
   renderStrip();
   renderDay();
   el(`meal-${next.meal.key}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
