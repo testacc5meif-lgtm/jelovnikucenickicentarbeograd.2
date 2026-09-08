@@ -202,7 +202,7 @@ const NEXT_LABEL = /^(АЛЕРГО|НАПОМЕНА|ЈЕЛОВНИК|Јелов�
  * два слова иза тачке, и усамљено слово на самом крају. Ниједан алерген
  * ни српска реченица не завршавају се једним словом.
  */
-function trimTail(text) {
+export function trimTail(text) {
   return text
     .replace(/([.!?])\s+\p{L}{1,2}\s*$/u, '$1')
     .replace(/\s+\p{L}\s*$/u, '')

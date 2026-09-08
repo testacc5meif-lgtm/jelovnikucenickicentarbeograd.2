@@ -67,6 +67,7 @@ export const close = store.close;
 export const findSourceByHash = gated(store.findSourceByHash);
 export const insertSource = gated(store.insertSource);
 export const latestSource = gated(store.latestSource);
+export const updateSourceFooter = gated(store.updateSourceFooter);
 export const upsertDay = gated(store.upsertDay);
 export const getDay = gated(store.getDay);
 export const listDays = gated(store.listDays);

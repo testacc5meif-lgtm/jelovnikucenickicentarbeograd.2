@@ -97,6 +97,11 @@ export async function latestSource() {
   return db.prepare('SELECT * FROM sources ORDER BY id DESC LIMIT 1').get() ?? null;
 }
 
+/** Мења алерго податке и напомену већ уписаног извора. */
+export async function updateSourceFooter(id, { allergens, note }) {
+  db.prepare('UPDATE sources SET allergens = ?, note = ? WHERE id = ?').run(allergens, note, id);
+}
+
 /* ---------- Дани и ставке ---------- */
 
 export async function upsertDay(sourceId, day) {

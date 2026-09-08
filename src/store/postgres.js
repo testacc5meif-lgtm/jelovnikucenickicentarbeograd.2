@@ -133,6 +133,11 @@ export async function latestSource() {
   return one('SELECT * FROM sources ORDER BY id DESC LIMIT 1');
 }
 
+/** Мења алерго податке и напомену већ уписаног извора. */
+export async function updateSourceFooter(id, { allergens, note }) {
+  await query('UPDATE sources SET allergens = $1, note = $2 WHERE id = $3', [allergens, note, id]);
+}
+
 /* ---------- Дани и ставке ---------- */
 
 export async function upsertDay(sourceId, day) {

@@ -10,6 +10,7 @@ import { checkOcr } from './ocr.js';
 import { cronRoutes } from './cron-routes.js';
 import { remember, recall } from './last-good.js';
 import { note, recent as recentCalls } from './access-log.js';
+import { tidyStoredFooter } from './maintenance.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(here, '..', 'public');
@@ -218,8 +219,17 @@ if (process.env.NODE_ENV !== 'test') {
 
   // Недоступна база не сме да обори процес: сервер креће, руте за читање
   // се сналазе са последњим успешним одговором, а веза се сама поправи.
-  store.ready.then((db) => {
-    if (!db.ok) console.error(`Упозорење: база није спремна. ${db.reason}`);
+  store.ready.then(async (db) => {
+    if (!db.ok) {
+      console.error(`Упозорење: база није спремна. ${db.reason}`);
+      return;
+    }
+    // Поправке над већ уписаним подацима. Безопасно за поновно покретање.
+    try {
+      await tidyStoredFooter();
+    } catch (error) {
+      console.error(`Поправка подножја није успела: ${error.message}`);
+    }
   });
 
   app.listen(config.port, () => {

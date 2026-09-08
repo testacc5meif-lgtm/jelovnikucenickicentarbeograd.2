@@ -372,3 +372,27 @@ test('отргнуто слово са краја подножја се скид
   assert.equal(cisto.allergens, 'глутен, јаја, млеко, риба, соја, конзерванси');
   assert.equal(cisto.note, 'МОЖЕ ДОЋИ ДО ИЗМЕНЕ ЈЕЛОВНИКА.');
 });
+
+test('поправка подножја мења већ уписан запис и сме да се понови', async () => {
+  // Кад се обрада поправи, то важи тек за наредни јеловник. Оно што је
+  // већ у бази мора да се поправи посебно, јер корисник види баш то.
+  process.env.DB_PATH = './data/maintenance.db';
+  const fresh = await import(`../src/db.js?t=${Date.now()}`);
+  const { tidyStoredFooter } = await import(`../src/maintenance.js?t=${Date.now()}`);
+
+  await fresh.insertSource({
+    url: 'u', sha256: `x-${Date.now()}`, bytes: 1,
+    periodFrom: '2026-09-01', periodTo: '2026-09-02',
+    allergens: 'глутен, јаја, соја И',
+    note: 'МОЖЕ ДОЋИ ДО ИЗМЕНЕ ЈЕЛОВНИКА. И',
+    dayCount: 1,
+  });
+
+  const prvi = await tidyStoredFooter({ log: () => {} });
+  assert.equal(prvi.changed, true);
+  assert.equal(prvi.note, 'МОЖЕ ДОЋИ ДО ИЗМЕНЕ ЈЕЛОВНИКА.');
+  assert.equal(prvi.allergens, 'глутен, јаја, соја');
+
+  const drugi = await tidyStoredFooter({ log: () => {} });
+  assert.equal(drugi.changed, false, 'поновно покретање не сме ништа да мења');
+});
