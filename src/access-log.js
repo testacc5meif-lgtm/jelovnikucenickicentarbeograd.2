@@ -6,12 +6,26 @@
 //
 // Живи у меморији, држи последњих неколико позива и види се кроз /health.
 
+import * as store from './db.js';
+
 const MAX = 12;
 const entries = [];
 
+/**
+ * Бележи позив, у меморију и у базу.
+ *
+ * Само меморија није довољна: бесплатан хостинг успављује услугу после
+ * петнаест минута, чиме се дневник брише, а позиви распореда су размакнути
+ * сатима. Дневник је зато при свакој провери био празан и није могао ништа
+ * да каже. У бази се чува по једна врста по путањи, дакле шака редова.
+ */
 export function note(entry) {
   entries.unshift({ at: new Date().toISOString(), ...entry });
   if (entries.length > MAX) entries.length = MAX;
+
+  // Упис не сме да успори одговор ни да падне ако база не ради.
+  store.noteCronCall(entry.путања, entry.метод, entry.исход)
+    .catch((error) => console.error(`Дневник позива: ${error.message}`));
 }
 
 export function recent() {

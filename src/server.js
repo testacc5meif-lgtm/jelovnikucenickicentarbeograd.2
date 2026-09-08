@@ -148,7 +148,10 @@ if (config.cronSecret) app.use('/api/cron', cronRoutes());
 // Најмањи могући одговор, за посао који само држи услугу будном.
 // /health за то не ваља, јер расте са дневницима, а сервиси за распоред
 // одбијају одговоре преко неколико стотина бајтова.
-app.all('/ping', (req, res) => res.json({ ok: true }));
+app.all('/ping', (req, res) => {
+  note({ путања: '/ping', метод: req.method, исход: 'прихваћено' });
+  res.json({ ok: true });
+});
 
 // Стање сервера мора да одговори и кад база не ради, иначе хостинг мисли
 // да је услуга мртва и гаси је баш кад треба да сачека да се база врати.
@@ -165,6 +168,13 @@ app.get('/health', async (req, res) => {
     // да ли пролази проверу тајне.
     cronCalls: recentCalls(),
   };
+
+  // Трајни дневник позива, који преживљава успављивање услуге.
+  try {
+    body.cronCallsStored = await store.cronCallLog();
+  } catch {
+    body.cronCallsStored = null;
+  }
 
   try {
     body.subscribers = await store.countSubscribers();

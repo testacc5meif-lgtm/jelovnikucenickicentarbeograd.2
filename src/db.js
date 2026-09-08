@@ -83,3 +83,5 @@ export const markSuccess = gated(store.markSuccess);
 export const alreadySent = gated(store.alreadySent);
 export const logSend = gated(store.logSend);
 export const recentSends = gated(store.recentSends);
+export const noteCronCall = gated(store.noteCronCall);
+export const cronCallLog = gated(store.cronCallLog);

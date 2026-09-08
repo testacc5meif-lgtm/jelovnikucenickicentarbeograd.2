@@ -82,6 +82,14 @@ export async function migrate() {
       last_seen_at timestamptz NOT NULL DEFAULT now()
     );
 
+    CREATE TABLE IF NOT EXISTS cron_calls (
+      path    text PRIMARY KEY,
+      method  text NOT NULL,
+      outcome text NOT NULL,
+      at      timestamptz NOT NULL DEFAULT now(),
+      hits    integer NOT NULL DEFAULT 1
+    );
+
     CREATE TABLE IF NOT EXISTS sent_log (
       id      bigserial PRIMARY KEY,
       meal    text NOT NULL,
@@ -107,7 +115,7 @@ export async function migrate() {
  * као власник таблица.
  */
 async function lockDown() {
-  const tables = ['sources', 'days', 'items', 'subscriptions', 'sent_log'];
+  const tables = ['sources', 'days', 'items', 'subscriptions', 'sent_log', 'cron_calls'];
   for (const table of tables) {
     await query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
   }
@@ -269,6 +277,24 @@ export async function markFailure(endpoint) {
 
 export async function markSuccess(endpoint) {
   await query('UPDATE subscriptions SET failures = 0, last_seen_at = now() WHERE endpoint = $1', [endpoint]);
+}
+
+/* ---------- Дневник позива спољног распореда ---------- */
+
+export async function noteCronCall(path, method, outcome) {
+  await query(
+    `INSERT INTO cron_calls (path, method, outcome, at, hits) VALUES ($1, $2, $3, now(), 1)
+     ON CONFLICT (path) DO UPDATE SET method = excluded.method,
+                                      outcome = excluded.outcome,
+                                      at = excluded.at,
+                                      hits = cron_calls.hits + 1`,
+    [path, method, outcome],
+  );
+}
+
+export async function cronCallLog() {
+  const { rows } = await query('SELECT path, method, outcome, at, hits FROM cron_calls ORDER BY at DESC');
+  return rows;
 }
 
 /* ---------- Дневник слања ---------- */

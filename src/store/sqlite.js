@@ -57,6 +57,14 @@ db.exec(`
     last_seen_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS cron_calls (
+    path    TEXT PRIMARY KEY,
+    method  TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    at      TEXT NOT NULL,
+    hits    INTEGER NOT NULL DEFAULT 1
+  );
+
   CREATE TABLE IF NOT EXISTS sent_log (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     meal    TEXT NOT NULL,
@@ -189,6 +197,22 @@ export async function markFailure(endpoint) {
 
 export async function markSuccess(endpoint) {
   db.prepare('UPDATE subscriptions SET failures = 0, last_seen_at = ? WHERE endpoint = ?').run(now(), endpoint);
+}
+
+/* ---------- Дневник позива спољног распореда ---------- */
+
+export async function noteCronCall(path, method, outcome) {
+  db.prepare(`
+    INSERT INTO cron_calls (path, method, outcome, at, hits) VALUES (?, ?, ?, ?, 1)
+    ON CONFLICT(path) DO UPDATE SET method = excluded.method,
+                                    outcome = excluded.outcome,
+                                    at = excluded.at,
+                                    hits = cron_calls.hits + 1
+  `).run(path, method, outcome, now());
+}
+
+export async function cronCallLog() {
+  return db.prepare('SELECT path, method, outcome, at, hits FROM cron_calls ORDER BY at DESC').all();
 }
 
 /* ---------- Дневник слања ---------- */
