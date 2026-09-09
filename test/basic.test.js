@@ -442,3 +442,18 @@ test('порука о обавештењима каже шта да се ура�
   assert.match(proba(`${IOS} Version/15.0 Safari/604.1`, { standalone: true, push: false }), /16\.4/, 'старији iOS мора да добије тачан разлог');
   assert.equal(proba('Mozilla/5.0 (Linux; Android 14) Chrome/120.0 Mobile'), null, 'на Android-у претплата мора да буде могућа');
 });
+
+test('звоно ради и пре него што подаци стигну', () => {
+  // Render се буди и по двадесет секунди, а корисник за то време додирне
+  // звоно. Читање оброка из празног стања бацало је грешку коју нико не
+  // види, па је дугме деловало као да уопште не ради.
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  const sheet = app.slice(app.indexOf('function openSheet'), app.indexOf('async function saveSubscription'));
+
+  assert.match(sheet, /if \(!state\.meta\)/, 'прозор мора да се отвори и без података');
+  assert.ok(
+    sheet.indexOf('if (!state.meta)') < sheet.indexOf('for (const meal of state.meta.meals)'),
+    'провера празног стања мора да дође пре читања оброка',
+  );
+  assert.match(app, /catch \(error\) \{\s*el\('sheet'\)\.hidden = false;/, 'грешка при отварању мора да стигне до корисника');
+});

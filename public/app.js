@@ -339,7 +339,27 @@ function whyNotSubscribable() {
   return null;
 }
 
+/**
+ * Отвара прозор за обавештења.
+ *
+ * Мора да ради и пре него што подаци стигну. Бесплатан хостинг се буди и
+ * по двадесет секунди, а корисник за то време додирне звоно. Раније би
+ * читање оброка из празног стања бацило грешку, коју нико не види, па је
+ * дугме деловало као да уопште не ради.
+ */
 function openSheet() {
+  const note = el('sheetNote');
+  const save = el('sheetSave');
+  el('sheet').hidden = false;
+
+  if (!state.meta) {
+    el('prefs').replaceChildren();
+    note.hidden = false;
+    note.textContent = 'Подаци се још учитавају. Сачекај који тренутак, па пробај поново.';
+    save.disabled = true;
+    return;
+  }
+
   const prefs = el('prefs');
   prefs.replaceChildren();
   for (const meal of state.meta.meals) {
@@ -350,15 +370,10 @@ function openSheet() {
     prefs.append(li);
   }
 
-  const note = el('sheetNote');
-  const save = el('sheetSave');
   const prepreka = whyNotSubscribable();
-
   note.hidden = !prepreka;
   if (prepreka) note.textContent = prepreka;
   save.disabled = Boolean(prepreka);
-
-  el('sheet').hidden = false;
 }
 
 /**
@@ -434,7 +449,20 @@ async function saveSubscription() {
 
 /* ---------- Повезивање ---------- */
 
-el('bell').addEventListener('click', openSheet);
+// Грешка у руковаоцу додира нигде се не види, па дугме делује као да не
+// ради. Овако бар стигне до корисника.
+el('bell').addEventListener('click', () => {
+  try {
+    openSheet();
+  } catch (error) {
+    el('sheet').hidden = false;
+    el('prefs').replaceChildren();
+    const note = el('sheetNote');
+    note.hidden = false;
+    note.textContent = `Дошло је до грешке: ${error.message}`;
+    el('sheetSave').disabled = true;
+  }
+});
 
 // Трака „следећи оброк” води право на тај дан и оброк.
 el('upNext').addEventListener('click', () => {
