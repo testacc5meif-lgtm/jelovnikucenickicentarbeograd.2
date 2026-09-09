@@ -417,3 +417,28 @@ test('приказ тражи свеж податак мимо кеша одма
   assert.match(app, /api\/meta\?svez=1/, 'освежавање мора да заобиђе кеш');
   assert.match(sw, /searchParams\.get\('svez'\) === '1'/, 'service worker мора да пропусти тај захтев на мрежу');
 });
+
+test('порука о обавештењима каже шта да се уради, за сваки уређај', async () => {
+  // На iPhone-у сваки прегледач ради на Apple-овом мотору, али само Safari
+  // сме да дода апликацију на почетни екран. Chrome тамо нема PushManager,
+  // па је корисник добијао поруку да прегледач не подржава обавештења,
+  // што је тачно али не каже шта даље.
+  const src = fs.readFileSync('./public/app.js', 'utf8');
+  const telo = src.slice(src.indexOf('const isStandalone ='), src.indexOf('function openSheet'));
+
+  const proba = (ua, { standalone = false, push = true } = {}) => {
+    const nav = { userAgent: ua, platform: /iPhone/.test(ua) ? 'iPhone' : 'Linux', maxTouchPoints: 5, standalone, serviceWorker: {} };
+    const win = { navigator: nav, matchMedia: () => ({ matches: standalone }) };
+    if (push) win.PushManager = function () {};
+    const fn = new Function('navigator', 'window', 'state', `${telo}\n; return whyNotSubscribable();`);
+    return fn(nav, win, { meta: { pushEnabled: true } });
+  };
+
+  const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15';
+
+  assert.match(proba(`${IOS} CriOS/120.0`), /Safari/, 'Chrome на iPhone-у мора да упути на Safari');
+  assert.match(proba(`${IOS} Version/17.0 Safari/604.1`), /почетни екран/, 'Safari мора да упути на додавање на почетни екран');
+  assert.equal(proba(`${IOS} Version/17.0 Safari/604.1`, { standalone: true }), null, 'из инсталиране апликације претплата мора да буде могућа');
+  assert.match(proba(`${IOS} Version/15.0 Safari/604.1`, { standalone: true, push: false }), /16\.4/, 'старији iOS мора да добије тачан разлог');
+  assert.equal(proba('Mozilla/5.0 (Linux; Android 14) Chrome/120.0 Mobile'), null, 'на Android-у претплата мора да буде могућа');
+});

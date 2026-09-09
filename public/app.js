@@ -298,7 +298,46 @@ function urlBase64ToUint8Array(base64) {
 const isStandalone = () =>
   window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
-const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
+  // iPad од новијих издања пријављује се као Mac, али има додир на екрану.
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+// На iPhone-у сваки прегледач ради на Apple-овом мотору, али само Safari
+// сме да дода апликацију на почетни екран. Chrome и Firefox тамо носе
+// своје ознаке у називу.
+const isIosSafari = () => isIos() && !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome/i.test(navigator.userAgent);
+
+/**
+ * Зашто претплата тренутно није могућа, ако није.
+ *
+ * Редослед је важан. Провера за iPhone иде прва, јер тамо ниједан
+ * прегледач осим Safari-ја нема ни PushManager, па би иначе искакала
+ * порука да прегледач не подржава обавештења, што је тачно али
+ * кориснику не каже шта да уради.
+ */
+function whyNotSubscribable() {
+  if (!state.meta.pushEnabled) return 'Обавештења тренутно нису подешена на серверу.';
+
+  if (isIos()) {
+    if (!isIosSafari()) {
+      return 'На iPhone-у обавештења може да укључи само Safari. Отвори ову исту адресу у Safari-ју, '
+        + 'додај је на почетни екран преко дугмета Подели, па се претплати из тако отворене апликације.';
+    }
+    if (!isStandalone()) {
+      return 'На iPhone-у обавештења раде тек из апликације са почетног екрана. Додирни дугме Подели, '
+        + 'изабери „Додај на почетни екран”, отвори је одатле, па се претплати.';
+    }
+    if (!('PushManager' in window)) {
+      return 'Овај iPhone има старије издање система. Обавештења траже iOS 16.4 или новији.';
+    }
+    return null;
+  }
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return 'Овај прегледач не подржава обавештења.';
+  }
+  return null;
+}
 
 function openSheet() {
   const prefs = el('prefs');
@@ -313,22 +352,11 @@ function openSheet() {
 
   const note = el('sheetNote');
   const save = el('sheetSave');
-  note.hidden = true;
-  save.disabled = false;
+  const prepreka = whyNotSubscribable();
 
-  if (!state.meta.pushEnabled) {
-    note.hidden = false;
-    note.textContent = 'Обавештења тренутно нису подешена на серверу.';
-    save.disabled = true;
-  } else if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    note.hidden = false;
-    note.textContent = 'Овај прегледач не подржава обавештења.';
-    save.disabled = true;
-  } else if (isIos() && !isStandalone()) {
-    note.hidden = false;
-    note.textContent = 'На iPhone-у обавештења раде тек кад додаш апликацију на почетни екран: дугме Подели, па „Додај на почетни екран”.';
-    save.disabled = true;
-  }
+  note.hidden = !prepreka;
+  if (prepreka) note.textContent = prepreka;
+  save.disabled = Boolean(prepreka);
 
   el('sheet').hidden = false;
 }
