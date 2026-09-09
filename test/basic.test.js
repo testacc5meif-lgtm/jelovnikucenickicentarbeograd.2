@@ -407,3 +407,13 @@ test('датум се не чита из кешираног одговора с�
   assert.match(app, /timeZone: zone/, 'рачунање мора да поштује зону, не сат уређаја');
   assert.ok(!app.includes('new Date().getHours()'), 'час се не сме узимати са сата уређаја');
 });
+
+test('приказ тражи свеж податак мимо кеша одмах по отварању', () => {
+  // Кеширан /api/meta умео је да остане заробљен данима, па су се виделе
+  // старе вредности: прво време најаве, па отргнуто слово у напомени.
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  const sw = fs.readFileSync('./public/sw.js', 'utf8');
+  assert.match(app, /refreshMeta\(\)/, 'мора да постоји освежавање после првог исцртавања');
+  assert.match(app, /api\/meta\?svez=1/, 'освежавање мора да заобиђе кеш');
+  assert.match(sw, /searchParams\.get\('svez'\) === '1'/, 'service worker мора да пропусти тај захтев на мрежу');
+});

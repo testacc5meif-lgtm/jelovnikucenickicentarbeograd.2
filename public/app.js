@@ -98,11 +98,33 @@ async function load() {
     return;
   }
 
+  // Први приказ иде из кеша, да се апликација отвори одмах док се сервер
+  // буди. Одмах затим се тражи свеж податак, мимо кеша, и ако се разликује
+  // приказ се тихо поправи. Без овога је кеширан одговор умео да остане
+  // заробљен данима, па су се виделе старе вредности.
+  refreshMeta();
+
   // Долазак из обавештења: помери приказ на тражени оброк.
   const focus = params.get('obrok');
   if (focus) {
     // Без "smooth": глатко померање прегледач прекине док се страна још слаже.
     requestAnimationFrame(() => el(`meal-${focus}`)?.scrollIntoView({ block: 'center' }));
+  }
+}
+
+/** Тражи свеж /api/meta мимо кеша и поправља приказ ако се разликује. */
+async function refreshMeta() {
+  try {
+    const fresh = await (await fetch('/api/meta?svez=1')).json();
+    if (JSON.stringify(fresh) === JSON.stringify(state.meta)) return;
+    state.meta = fresh;
+    state.today = nowThere().date;
+    renderStrip();
+    renderDay();
+    renderFooter();
+    renderUpNext();
+  } catch {
+    // Нема мреже: остаје оно из кеша, што је и сврха кеша.
   }
 }
 

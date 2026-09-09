@@ -1,4 +1,4 @@
-const CACHE = 'jelovnik-v3';
+const CACHE = 'jelovnik-v4';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest',
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 
@@ -68,6 +68,14 @@ self.addEventListener('fetch', (event) => {
 
   // Стање сервера и руте за распоред никад не иду из кеша.
   if (url.pathname === '/health' || url.pathname.startsWith('/api/cron')) return;
+
+  // Изричит захтев за свежим податком иде право на мрежу и не кешира се.
+  // Апликација га шаље одмах после првог исцртавања, да оно што види
+  // корисник не остане заробљено у кешу.
+  if (url.searchParams.get('svez') === '1') {
+    event.respondWith(fetch(request).catch(() => caches.match(url.pathname) || Response.error()));
+    return;
+  }
 
   // Одговор иде из кеша одмах, али освежавање тече и после тога. Без овог
   // продужетка живота прегледач га прекине чим пошаље одговор, па кеш
