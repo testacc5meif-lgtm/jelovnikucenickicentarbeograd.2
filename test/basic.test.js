@@ -505,3 +505,19 @@ test('нова верзија апликације стиже одмах, не �
   assert.match(app, /imaoKontrolora/, 'прва посета не сме да се учитава двапут');
   assert.match(app, /ucitavaSe/, 'мора да постоји брана од учитавања у круг');
 });
+
+test('прошло је прошло, без обзира на дан', () => {
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  assert.match(app, /\(stanje === 'прошло' \? ' past' : ''\)/, 'затамњење не сме да зависи од тога да ли је данас');
+  // Ознака "било" остаје само данас: на прошлом дану су сва три прошла.
+  assert.match(app, /stanje === 'прошло' && isToday/, 'ознака стоји само на данашњем дану');
+});
+
+test('тачкица уз јело не зависи од тврде удаљености од врха', () => {
+  // У Samsung прегледачу тачкице нису биле поравнате са текстом, јер је
+  // положај био задат у пикселима од врха реда.
+  const css = fs.readFileSync('./public/styles.css', 'utf8');
+  const pravilo = css.slice(css.indexOf('.meal li::before'), css.indexOf('.meal .none'));
+  assert.ok(!pravilo.includes('position: absolute'), 'тачкица не сме да буде апсолутно постављена');
+  assert.match(pravilo, /margin-top: 0\.55em/, 'положај мора да прати величину слова');
+});

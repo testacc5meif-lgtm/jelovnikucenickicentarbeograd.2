@@ -193,16 +193,22 @@ main { padding: 0 16px; }
 .meal-head .ico { font-size: 18px; line-height: 1; }
 
 .meal ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+
+/* Тачкица је део реда, а не апсолутно постављена на тврду удаљеност од
+   врха. Тако остаје поравната са првим редом текста и кад прегледач
+   другачије рачуна висину реда, што се видело у Samsung прегледачу. */
 .meal li {
-  padding-left: 15px;
-  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
   font-size: 15px;
 }
 .meal li::before {
   content: "";
-  position: absolute;
-  left: 0; top: 9px;
-  width: 6px; height: 6px;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 0.55em;
   border-radius: 50%;
   background: var(--accent);
   opacity: .55;

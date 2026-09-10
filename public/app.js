@@ -265,10 +265,11 @@ function renderDay() {
     const istaknut = trenutno.date === state.selected && trenutno.meal.key === meal.key;
 
     const card = document.createElement('section');
+    // Прошло је прошло, без обзира да ли је данас или пре три дана.
     card.className = 'meal'
       + (istaknut ? ' next' : '')
       + (stanje === 'у току' ? ' active' : '')
-      + (stanje === 'прошло' && isToday ? ' past' : '');
+      + (stanje === 'прошло' ? ' past' : '');
     card.id = `meal-${meal.key}`;
 
     const list = items.length
@@ -283,6 +284,8 @@ function renderDay() {
     } else if (istaknut) {
       mark = `<span class="mark next" data-countdown="${meal.key}">${untilText(trenutno.minutes)}</span>`;
     } else if (stanje === 'прошло' && isToday) {
+      // Ознака стоји само данас, где раздваја оброке међусобно. На прошлом
+      // дану су сва три прошла, па би три исте ознаке биле само бука.
       mark = '<span class="mark past">било</span>';
     }
 
