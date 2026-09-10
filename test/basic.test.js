@@ -496,3 +496,12 @@ test('приказ при отварању стаје на оброк који �
   assert.match(app, /sada\.date === state\.selected \? sada\.meal\.key : null/, 'циљ мора да буде оброк који је у току или следи');
   assert.match(app, /const vidiSe = /, 'померање мора да изостане ако се картица већ види');
 });
+
+test('нова верзија апликације стиже одмах, не из другог покушаја', () => {
+  // Код се служи из кеша, па се измена виђала тек при следећем отварању, а
+  // на телефону је умела да остане заглављена данима.
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  assert.match(app, /controllerchange/, 'нови service worker мора да покрене поновно учитавање');
+  assert.match(app, /imaoKontrolora/, 'прва посета не сме да се учитава двапут');
+  assert.match(app, /ucitavaSe/, 'мора да постоји брана од учитавања у круг');
+});

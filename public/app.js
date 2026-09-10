@@ -579,6 +579,25 @@ try {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch((error) => console.warn('SW:', error.message));
 
+  /**
+   * Нова верзија апликације стиже одмах, не при следећем отварању.
+   *
+   * Сам код се служи из кеша, па се измена виђала тек из другог покушаја,
+   * а на телефону је умела да остане заглављена данима. Кад нови service
+   * worker преузме страницу, овде се учита изнова, па корисник добије нову
+   * верзију без затварања апликације.
+   *
+   * Услов да је контролор већ постојао спречава непотребно поновно
+   * учитавање при самој првој посети, кад се service worker тек уводи.
+   */
+  const imaoKontrolora = Boolean(navigator.serviceWorker.controller);
+  let ucitavaSe = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!imaoKontrolora || ucitavaSe) return;
+    ucitavaSe = true;
+    location.reload();
+  });
+
   // Приказ креће из кеша, па сервер стигне са свежијим подацима касније.
   // Тада service worker јави, а приказ се тихо освежи.
   navigator.serviceWorker.addEventListener('message', (event) => {
