@@ -457,3 +457,35 @@ test('звоно ради и пре него што подаци стигну', 
   );
   assert.match(app, /catch \(error\) \{\s*el\('sheet'\)\.hidden = false;/, 'грешка при отварању мора да стигне до корисника');
 });
+
+test('оброк траје, није тренутак', async () => {
+  // Апликација је у 18:40 писала да је вечера прошла, иако се служи до
+  // 20:30. Свака ставка мора да има и време завршетка.
+  const { MEALS } = await import('../src/config.js');
+
+  const očekivano = {
+    dorucak: ['06:30', '07:30'],
+    rucak: ['11:30', '15:00'],
+    vecera: ['18:30', '20:30'],
+  };
+
+  for (const [key, [start, end]] of Object.entries(očekivano)) {
+    assert.equal(MEALS[key].startsAt, start, `${key} почиње у ${start}`);
+    assert.equal(MEALS[key].endsAt, end, `${key} се служи до ${end}`);
+    assert.ok(MEALS[key].endsAt > MEALS[key].startsAt, `${key}: крај мора да буде после почетка`);
+  }
+
+  // Најава мора да стигне пре него што служење почне.
+  for (const meal of Object.values(MEALS)) {
+    if (meal.targetDayOffset === 0) {
+      assert.ok(meal.notifyAt < meal.startsAt, `${meal.key}: најава мора да претходи служењу`);
+    }
+  }
+});
+
+test('приказ разликује три стања оброка', () => {
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  assert.match(app, /function mealState/, 'мора да постоји рачунање стања оброка');
+  assert.match(app, /'у току'/, 'мора да постоји стање док се оброк служи');
+  assert.match(app, /endsAt/, 'стање мора да се рачуна и из времена завршетка');
+});

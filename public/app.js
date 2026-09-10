@@ -172,16 +172,48 @@ function renderStrip() {
  * Следећи оброк који тек предстоји. Кад се данашњи дан заврши,
  * прелази на сутрашњи доручак, исто као што ради и вечерње обавештење.
  */
-function nextUp() {
+const toMinutes = (time) => {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+};
+
+/**
+ * Шта се управо служи, или шта следи.
+ *
+ * Оброк траје, није тренутак. Без времена завршетка апликација је већ у
+ * 18:40 писала да је вечера прошла, иако се служи до 20:30.
+ *
+ * Враћа `у току` док траје служење, иначе `следи` за први наредни оброк.
+ */
+function whatsOn() {
   const { date, minutes } = nowThere();
+
   for (const meal of state.meta.meals) {
-    const [h, m] = meal.startsAt.split(':').map(Number);
-    if (minutes < h * 60 + m) return { date, meal, minutesAway: h * 60 + m - minutes };
+    const start = toMinutes(meal.startsAt);
+    const end = toMinutes(meal.endsAt || meal.startsAt);
+    if (minutes < start) return { kind: 'следи', date, meal, minutes: start - minutes };
+    if (minutes < end) return { kind: 'у току', date, meal, minutes: end - minutes };
   }
-  const tomorrow = shift(date, 1);
+
   const first = state.meta.meals[0];
-  const [h, m] = first.startsAt.split(':').map(Number);
-  return { date: tomorrow, meal: first, minutesAway: 24 * 60 - minutes + h * 60 + m };
+  return {
+    kind: 'следи',
+    date: shift(date, 1),
+    meal: first,
+    minutes: 24 * 60 - minutes + toMinutes(first.startsAt),
+  };
+}
+
+/** Стање једног оброка на изабраном дану. */
+function mealState(meal, dateStr) {
+  const { date, minutes } = nowThere();
+  if (dateStr !== date) return dateStr < date ? 'прошло' : 'тек следи';
+
+  const start = toMinutes(meal.startsAt);
+  const end = toMinutes(meal.endsAt || meal.startsAt);
+  if (minutes < start) return 'тек следи';
+  if (minutes < end) return 'у току';
+  return 'прошло';
 }
 
 function renderDay() {
@@ -201,18 +233,18 @@ function renderDay() {
   container.replaceChildren();
   if (!day) return;
 
-  const next = nextUp();
-  const minutesNow = nowThere().minutes;
+  const trenutno = whatsOn();
 
   for (const meal of state.meta.meals) {
     const items = day.meals[meal.key] || [];
-    const [h, m] = meal.startsAt.split(':').map(Number);
-
-    const isNext = next.date === state.selected && next.meal.key === meal.key;
-    const isPast = isToday && !isNext && minutesNow >= h * 60 + m;
+    const stanje = mealState(meal, state.selected);
+    const istaknut = trenutno.date === state.selected && trenutno.meal.key === meal.key;
 
     const card = document.createElement('section');
-    card.className = 'meal' + (isNext ? ' next' : '') + (isPast ? ' past' : '');
+    card.className = 'meal'
+      + (istaknut ? ' next' : '')
+      + (stanje === 'у току' ? ' active' : '')
+      + (stanje === 'прошло' && isToday ? ' past' : '');
     card.id = `meal-${meal.key}`;
 
     const list = items.length
@@ -220,22 +252,33 @@ function renderDay() {
       : '<p class="none">Није предвиђено.</p>';
 
     // Ознака поред наслова говори у ком је стању оброк, да се не мора
-    // рачунати из сата. Одбројавање се освежава истим тајмером као трака.
-    const mark = isNext
-      ? `<span class="mark next" data-countdown="${meal.key}">${untilText(next.minutesAway)}</span>`
-      : isPast ? '<span class="mark past">било</span>' : '';
+    // рачунати из сата. Одбројавање прати исти откуцај као трака изнад.
+    let mark = '';
+    if (stanje === 'у току') {
+      mark = `<span class="mark active" data-countdown="${meal.key}">служи се још ${leftText(trenutno.minutes)}</span>`;
+    } else if (istaknut) {
+      mark = `<span class="mark next" data-countdown="${meal.key}">${untilText(trenutno.minutes)}</span>`;
+    } else if (stanje === 'прошло' && isToday) {
+      mark = '<span class="mark past">било</span>';
+    }
 
     card.innerHTML = `<div class="meal-head"><span class="ico" aria-hidden="true">${ICONS[meal.key]}</span>`
-      + `<h3>${meal.label}</h3>${mark}<span class="time">од ${meal.startsAt}</span></div>${list}`;
+      + `<h3>${meal.label}</h3>${mark}<span class="time">${meal.startsAt}–${meal.endsAt}</span></div>${list}`;
     container.append(card);
   }
+}
+
+/** "1 ч 20 мин", без предлога. */
+function leftText(minutes) {
+  const safe = Math.max(0, minutes);
+  const hours = Math.floor(safe / 60);
+  return `${hours > 0 ? `${hours} ч ` : ''}${safe % 60} мин`;
 }
 
 /** "за 1 ч 20 мин", или "сада" кад је време стигло. */
 function untilText(minutes) {
   if (minutes <= 0) return 'сада';
-  const hours = Math.floor(minutes / 60);
-  return `за ${hours > 0 ? `${hours} ч ` : ''}${minutes % 60} мин`;
+  return `за ${leftText(minutes)}`;
 }
 
 function renderUpNext() {
@@ -248,20 +291,30 @@ function renderUpNext() {
       load().catch(() => {});
       return;
     }
-    const next = nextUp();
-    if (!state.days.has(next.date)) {
+    const sada = whatsOn();
+    if (!state.days.has(sada.date)) {
       box.hidden = true;
       return;
     }
     box.hidden = false;
-    state.next = next;
-    const when = next.date === state.today ? '' : 'сутра ';
-    box.innerHTML = `<span>Следећи оброк: <b>${next.meal.label}</b> ${when}у ${next.meal.startsAt}</span>`
-      + `<span class="cd">${untilText(next.minutesAway)}</span>`;
+    state.next = sada;
+
+    if (sada.kind === 'у току') {
+      box.innerHTML = `<span><b>${sada.meal.label}</b> се служи, до ${sada.meal.endsAt}</span>`
+        + `<span class="cd">још ${leftText(sada.minutes)}</span>`;
+    } else {
+      const when = sada.date === state.today ? '' : 'сутра ';
+      box.innerHTML = `<span>Следећи оброк: <b>${sada.meal.label}</b> ${when}у ${sada.meal.startsAt}</span>`
+        + `<span class="cd">${untilText(sada.minutes)}</span>`;
+    }
 
     // Одбројавање на самој картици прати исти откуцај.
-    const badge = document.querySelector(`.mark.next[data-countdown="${next.meal.key}"]`);
-    if (badge) badge.textContent = untilText(next.minutesAway);
+    const badge = document.querySelector(`.mark[data-countdown="${sada.meal.key}"]`);
+    if (badge) {
+      badge.textContent = sada.kind === 'у току'
+        ? `служи се још ${leftText(sada.minutes)}`
+        : untilText(sada.minutes);
+    }
   };
 
   tick();

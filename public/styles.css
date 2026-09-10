@@ -8,6 +8,8 @@
   --accent: #1d63d1;
   --accent-soft: #e7effc;
   --warm: #b4531b;
+  --serving: #15803d;
+  --serving-soft: #e6f4ea;
   --radius: 16px;
   --safe: env(safe-area-inset-bottom, 0px);
 }
@@ -22,6 +24,8 @@
     --accent: #6ea8fe;
     --accent-soft: #17233a;
     --warm: #e8a06a;
+    --serving: #3fa564;
+    --serving-soft: #12251a;
   }
 }
 
@@ -164,6 +168,14 @@ main { padding: 0 16px; }
 }
 .mark.next { background: var(--accent); color: #fff; font-variant-numeric: tabular-nums; }
 .mark.past { background: var(--line); color: var(--muted); }
+
+/* Оброк који се управо служи. Најважније стање, па има своју боју. */
+.mark.active { background: var(--serving); color: #fff; font-variant-numeric: tabular-nums; }
+.meal.active {
+  border-color: var(--serving);
+  background: linear-gradient(var(--serving-soft), var(--card) 120px);
+  box-shadow: 0 2px 14px rgba(21, 128, 61, .14);
+}
 
 .meal-head {
   display: flex;

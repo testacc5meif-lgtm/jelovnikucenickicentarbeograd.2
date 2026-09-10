@@ -32,14 +32,18 @@ export const config = {
 /**
  * Оброци: када почињу, када иде најава и на који дан се та најава односи.
  *
+ * `startsAt` и `endsAt` су време служења. Оброк траје, није тренутак, па
+ * без краја апликација већ у 18:40 пише да је вечера прошла иако се служи
+ * до 20:30.
+ *
  * `targetDayOffset` се броји од дана слања. Доручак се најављује у 22:30
  * за сутра, па је помак 1. Ручак и вечера се најављују истог дана.
  * `accusative` служи реченицама попут „најава за вечеру".
  */
 export const MEALS = {
-  dorucak: { key: 'dorucak', label: 'Доручак', accusative: 'доручак', startsAt: '06:00', notifyAt: '22:30', targetDayOffset: 1 },
-  rucak:   { key: 'rucak',   label: 'Ручак',   accusative: 'ручак',   startsAt: '11:30', notifyAt: '10:30', targetDayOffset: 0 },
-  vecera:  { key: 'vecera',  label: 'Вечера',  accusative: 'вечеру',  startsAt: '18:30', notifyAt: '17:30', targetDayOffset: 0 },
+  dorucak: { key: 'dorucak', label: 'Доручак', accusative: 'доручак', startsAt: '06:30', endsAt: '07:30', notifyAt: '22:30', targetDayOffset: 1 },
+  rucak:   { key: 'rucak',   label: 'Ручак',   accusative: 'ручак',   startsAt: '11:30', endsAt: '15:00', notifyAt: '10:30', targetDayOffset: 0 },
+  vecera:  { key: 'vecera',  label: 'Вечера',  accusative: 'вечеру',  startsAt: '18:30', endsAt: '20:30', notifyAt: '17:30', targetDayOffset: 0 },
 };
 
 export const MEAL_KEYS = Object.keys(MEALS);
