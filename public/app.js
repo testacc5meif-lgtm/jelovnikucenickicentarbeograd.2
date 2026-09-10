@@ -102,7 +102,7 @@ async function load() {
   // буди. Одмах затим се тражи свеж податак, мимо кеша, и ако се разликује
   // приказ се тихо поправи. Без овога је кеширан одговор умео да остане
   // заробљен данима, па су се виделе старе вредности.
-  refreshMeta();
+  const osvezavanje = refreshMeta();
 
   // Долазак из обавештења води на тражени оброк. Иначе, при отварању
   // приказ сам стаје на оброк који је у току, или на први наредни, да се
@@ -110,9 +110,15 @@ async function load() {
   const focus = params.get('obrok');
   const sada = whatsOn();
   const cilj = focus || (sada.date === state.selected ? sada.meal.key : null);
+  if (!cilj) return;
 
-  // Без "smooth": глатко померање прегледач прекине док се страна још слаже.
-  if (cilj) requestAnimationFrame(() => focusOnMeal(cilj, { uvek: Boolean(focus) }));
+  // Клизање креће тек кад се приказ слегне. Освежавање мимо кеша уме да
+  // поново исцрта картице, а то би клизање у току прекинуло. Чека се
+  // најдуже пола секунде, да спора мрежа не задржи померање.
+  // Не преко requestAnimationFrame: он у позадинској картици не окида, па
+  // се померање не би десило ни кад корисник погледа страницу.
+  await Promise.race([osvezavanje, new Promise((resolve) => setTimeout(resolve, 500))]);
+  setTimeout(() => focusOnMeal(cilj, { uvek: Boolean(focus) }), 0);
 }
 
 /**
@@ -133,7 +139,18 @@ function focusOnMeal(key, { uvek = false } = {}) {
     if (vidiSe) return;
   }
 
-  card.scrollIntoView({ block: 'center' });
+  // Глатко клизање, али не увек.
+  //
+  // Прегледач анимацију не изводи док је страница у позадини, па би
+  // тражење глатког клизања тада значило да померања нема уопште и да
+  // корисник остане на врху. Мерење то и показује: без анимације иде на
+  // 378, са анимацијом остаје на нули док је картица скривена.
+  //
+  // Исто важи и кад корисник у подешавањима система тражи мање покрета.
+  const glatko = document.visibilityState === 'visible'
+    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  card.scrollIntoView({ block: 'center', behavior: glatko ? 'smooth' : 'auto' });
 }
 
 /** Тражи свеж /api/meta мимо кеша и поправља приказ ако се разликује. */
@@ -141,12 +158,16 @@ async function refreshMeta() {
   try {
     const fresh = await (await fetch('/api/meta?svez=1')).json();
     if (JSON.stringify(fresh) === JSON.stringify(state.meta)) return;
+
+    // Поновно исцртавање не сме да помери страницу под прстом корисника.
+    const zadrzi = window.scrollY;
     state.meta = fresh;
     state.today = nowThere().date;
     renderStrip();
     renderDay();
     renderFooter();
     renderUpNext();
+    window.scrollTo(0, zadrzi);
   } catch {
     // Нема мреже: остаје оно из кеша, што је и сврха кеша.
   }

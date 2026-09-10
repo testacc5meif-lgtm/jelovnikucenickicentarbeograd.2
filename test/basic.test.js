@@ -521,3 +521,19 @@ test('тачкица уз јело не зависи од тврде удаље�
   assert.ok(!pravilo.includes('position: absolute'), 'тачкица не сме да буде апсолутно постављена');
   assert.match(pravilo, /margin-top: 0\.55em/, 'положај мора да прати величину слова');
 });
+
+test('померање на оброк ради и кад анимација не може', () => {
+  // Мерење у прегледачу: док је страница у позадини, requestAnimationFrame
+  // не окида, а глатко клизање се не изводи. Оба ослонца су зато уклоњена
+  // из обавезног пута, иначе корисник остане на врху.
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  const deo = app.slice(app.indexOf('function focusOnMeal'), app.indexOf('/* ---------- Приказ'));
+
+  assert.match(deo, /document\.visibilityState === 'visible'/, 'глатко клизање само док је страница видљива');
+  assert.match(deo, /prefers-reduced-motion/, 'мора да поштује захтев за мање покрета');
+  assert.match(deo, /behavior: glatko \? 'smooth' : 'auto'/, 'иначе се помера одмах');
+  assert.ok(
+    !app.includes('requestAnimationFrame(() => focusOnMeal'),
+    'померање не сме да зависи од оквира анимације',
+  );
+});
