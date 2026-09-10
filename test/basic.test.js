@@ -489,3 +489,10 @@ test('приказ разликује три стања оброка', () => {
   assert.match(app, /'у току'/, 'мора да постоји стање док се оброк служи');
   assert.match(app, /endsAt/, 'стање мора да се рачуна и из времена завршетка');
 });
+
+test('приказ при отварању стаје на оброк који је у току', () => {
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  assert.match(app, /function focusOnMeal/, 'мора да постоји померање на оброк');
+  assert.match(app, /sada\.date === state\.selected \? sada\.meal\.key : null/, 'циљ мора да буде оброк који је у току или следи');
+  assert.match(app, /const vidiSe = /, 'померање мора да изостане ако се картица већ види');
+});

@@ -104,12 +104,36 @@ async function load() {
   // заробљен данима, па су се виделе старе вредности.
   refreshMeta();
 
-  // Долазак из обавештења: помери приказ на тражени оброк.
+  // Долазак из обавештења води на тражени оброк. Иначе, при отварању
+  // приказ сам стаје на оброк који је у току, или на први наредни, да се
+  // не тражи руком усред служења.
   const focus = params.get('obrok');
-  if (focus) {
-    // Без "smooth": глатко померање прегледач прекине док се страна још слаже.
-    requestAnimationFrame(() => el(`meal-${focus}`)?.scrollIntoView({ block: 'center' }));
+  const sada = whatsOn();
+  const cilj = focus || (sada.date === state.selected ? sada.meal.key : null);
+
+  // Без "smooth": глатко померање прегледач прекине док се страна још слаже.
+  if (cilj) requestAnimationFrame(() => focusOnMeal(cilj, { uvek: Boolean(focus) }));
+}
+
+/**
+ * Помера приказ на картицу оброка.
+ *
+ * Кад корисник сам отвори апликацију, померање има смисла само ако се
+ * картица не види. Ујутру је доручак ионако први на екрану, па би
+ * померање само склонило траку дана без разлога.
+ */
+function focusOnMeal(key, { uvek = false } = {}) {
+  const card = el(`meal-${key}`);
+  if (!card) return;
+
+  if (!uvek) {
+    const kartica = card.getBoundingClientRect();
+    const ispodZaglavlja = el('strip').getBoundingClientRect().bottom;
+    const vidiSe = kartica.top >= ispodZaglavlja && kartica.bottom <= window.innerHeight;
+    if (vidiSe) return;
   }
+
+  card.scrollIntoView({ block: 'center' });
 }
 
 /** Тражи свеж /api/meta мимо кеша и поправља приказ ако се разликује. */
