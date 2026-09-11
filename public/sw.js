@@ -1,4 +1,4 @@
-const CACHE = 'jelovnik-v6';
+const CACHE = 'jelovnik-v7';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest',
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/apple-touch-icon.png'];
 

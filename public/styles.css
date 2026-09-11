@@ -194,21 +194,24 @@ main { padding: 0 16px; }
 
 .meal ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
 
-/* Тачкица је део реда, а не апсолутно постављена на тврду удаљеност од
-   врха. Тако остаје поравната са првим редом текста и кад прегледач
-   другачије рачуна висину реда, што се видело у Samsung прегледачу. */
+/* Тачкица стоји у самом реду текста, као слово, а не као засебна колона.
+   Тако је vertical-align: middle спушта на средину малих слова, а ту
+   средину сваки прегледач рачуна из самог фонта. Раније је тачкица била
+   мерена од врха реда, па је свуда стајала два пиксела превисоко.
+   Висећи увлак држи преломљене редове испод текста, не испод тачкице,
+   и мора да буде тачно колико тачкица са својим размаком. */
 .meal li {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
+  padding-left: 15px;
+  text-indent: -15px;
   font-size: 15px;
 }
 .meal li::before {
   content: "";
-  flex: none;
+  display: inline-block;
   width: 6px;
   height: 6px;
-  margin-top: 0.55em;
+  margin-right: 9px;
+  vertical-align: middle;
   border-radius: 50%;
   background: var(--accent);
   opacity: .55;
