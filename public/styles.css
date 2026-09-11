@@ -229,6 +229,34 @@ main { padding: 0 16px; }
   gap: 7px;
 }
 .foot a { color: var(--accent); }
+/* Без извора подножје остаје празно, а црта изнад потписа не сме да се удвоји. */
+.foot:empty { display: none; }
+
+/* Потпис израђивача. Боје су из књиге знака Студија Новак и не прате тему апликације. */
+.potpis-red {
+  margin: 18px 16px 0;
+  text-align: center;
+}
+.potpis {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1;
+  color: #6e6a63;
+  text-decoration: none;
+}
+.potpis:hover { color: #101114; }
+.potpis svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .potpis { color: #8f8b83; }
+  .potpis:hover { color: #f4f2ed; }
+}
 
 .sheet {
   position: fixed;
