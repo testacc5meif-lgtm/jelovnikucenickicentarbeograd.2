@@ -222,11 +222,37 @@ const toMinutes = (time) => {
   return h * 60 + m;
 };
 
+const dayKind = (iso) => {
+  const index = weekdayIndex(iso);
+  if (index === 6) return 'subota';
+  if (index === 0) return 'nedelja';
+  return 'radni';
+};
+
+/**
+ * Сатница оброка за задати дан, или `null` кад се тог дана не служи по
+ * сатници. Викендом је то вечера: добија се као ланч пакет на ручку.
+ *
+ * Апликација која је остала у кешу не зна за сатницу по данима. Ако је
+ * нема у одговору, важи оно што стоји уз сам оброк, а то је радна сатница.
+ */
+function timesFor(key, dateStr) {
+  const schedule = state.meta?.schedule;
+  if (!schedule) {
+    const meal = state.meta?.meals.find((item) => item.key === key);
+    return meal ? { startsAt: meal.startsAt, endsAt: meal.endsAt } : null;
+  }
+  return schedule[dayKind(dateStr)]?.[key] || null;
+}
+
 /**
  * Шта се управо служи, или шта следи.
  *
  * Оброк траје, није тренутак. Без времена завршетка апликација је већ у
  * 18:40 писала да је вечера прошла, иако се служи до 20:30.
+ *
+ * Оброк без сатнице се прескаче. Викендом се вечера не служи, па не сме
+ * ни да се најави као следећа.
  *
  * Враћа `у току` док траје служење, иначе `следи` за први наредни оброк.
  */
@@ -234,18 +260,25 @@ function whatsOn() {
   const { date, minutes } = nowThere();
 
   for (const meal of state.meta.meals) {
-    const start = toMinutes(meal.startsAt);
-    const end = toMinutes(meal.endsAt || meal.startsAt);
-    if (minutes < start) return { kind: 'следи', date, meal, minutes: start - minutes };
-    if (minutes < end) return { kind: 'у току', date, meal, minutes: end - minutes };
+    const times = timesFor(meal.key, date);
+    if (!times) continue;
+    const start = toMinutes(times.startsAt);
+    const end = toMinutes(times.endsAt || times.startsAt);
+    if (minutes < start) return { kind: 'следи', date, meal, times, minutes: start - minutes };
+    if (minutes < end) return { kind: 'у току', date, meal, times, minutes: end - minutes };
   }
 
-  const first = state.meta.meals[0];
+  // Данашњи оброци су прошли. Сутрашњи први има своју сатницу, јер петак
+  // и субота не почињу у исти сат.
+  const sutra = shift(date, 1);
+  const first = state.meta.meals.find((meal) => timesFor(meal.key, sutra)) || state.meta.meals[0];
+  const times = timesFor(first.key, sutra) || { startsAt: first.startsAt, endsAt: first.endsAt };
   return {
     kind: 'следи',
-    date: shift(date, 1),
+    date: sutra,
     meal: first,
-    minutes: 24 * 60 - minutes + toMinutes(first.startsAt),
+    times,
+    minutes: 24 * 60 - minutes + toMinutes(times.startsAt),
   };
 }
 
@@ -254,8 +287,16 @@ function mealState(meal, dateStr) {
   const { date, minutes } = nowThere();
   if (dateStr !== date) return dateStr < date ? 'прошло' : 'тек следи';
 
-  const start = toMinutes(meal.startsAt);
-  const end = toMinutes(meal.endsAt || meal.startsAt);
+  const times = timesFor(meal.key, dateStr);
+  // Ланч пакет се добија на ручку, па прелази у прошло кад се ручак заврши.
+  // У току не буде никада, да се два оброка не служе у исти мах.
+  if (!times) {
+    const rucak = timesFor('rucak', dateStr);
+    return rucak && minutes >= toMinutes(rucak.endsAt) ? 'прошло' : 'тек следи';
+  }
+
+  const start = toMinutes(times.startsAt);
+  const end = toMinutes(times.endsAt || times.startsAt);
   if (minutes < start) return 'тек следи';
   if (minutes < end) return 'у току';
   return 'прошло';
@@ -293,9 +334,15 @@ function renderDay() {
       + (stanje === 'прошло' ? ' past' : '');
     card.id = `meal-${meal.key}`;
 
+    // Викендом вечера нема своју сатницу. У заглављу стоји ланч пакет, а
+    // испод јела пише где се добија, да нико не чека трпезарију увече.
+    const times = timesFor(meal.key, state.selected);
+    const when = times ? `${times.startsAt}–${times.endsAt}` : 'ланч пакет';
+
     const list = items.length
       ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
       : '<p class="none">Није предвиђено.</p>';
+    const paket = times ? '' : '<p class="paket">Добија се на ручку, не служи се увече.</p>';
 
     // Ознака поред наслова говори у ком је стању оброк, да се не мора
     // рачунати из сата. Одбројавање прати исти откуцај као трака изнад.
@@ -311,7 +358,7 @@ function renderDay() {
     }
 
     card.innerHTML = `<div class="meal-head"><span class="ico" aria-hidden="true">${ICONS[meal.key]}</span>`
-      + `<h3>${meal.label}</h3>${mark}<span class="time">${meal.startsAt}–${meal.endsAt}</span></div>${list}`;
+      + `<h3>${meal.label}</h3>${mark}<span class="time">${when}</span></div>${list}${paket}`;
     container.append(card);
   }
 }
@@ -348,11 +395,11 @@ function renderUpNext() {
     state.next = sada;
 
     if (sada.kind === 'у току') {
-      box.innerHTML = `<span><b>${sada.meal.label}</b> се служи, до ${sada.meal.endsAt}</span>`
+      box.innerHTML = `<span><b>${sada.meal.label}</b> се служи, до ${sada.times.endsAt}</span>`
         + `<span class="cd">још ${leftText(sada.minutes)}</span>`;
     } else {
       const when = sada.date === state.today ? '' : 'сутра ';
-      box.innerHTML = `<span>Следећи оброк: <b>${sada.meal.label}</b> ${when}у ${sada.meal.startsAt}</span>`
+      box.innerHTML = `<span>Следећи оброк: <b>${sada.meal.label}</b> ${when}у ${sada.times.startsAt}</span>`
         + `<span class="cd">${untilText(sada.minutes)}</span>`;
     }
 
@@ -466,8 +513,13 @@ function openSheet() {
   for (const meal of state.meta.meals) {
     const li = document.createElement('li');
     const id = `pref-${meal.key}`;
+    // Оброк који се неког дана не служи се тог дана и не најављује, па
+    // то мора да пише ту где се обавештење укључује.
+    const svaki = !state.meta.schedule
+      || Object.values(state.meta.schedule).every((dan) => dan[meal.key]);
+    const kada = `обавештење у ${meal.notifyAt}${svaki ? '' : ', радним данима'}`;
     li.innerHTML = `<input type="checkbox" id="${id}" ${state.prefs[meal.key] ? 'checked' : ''}>`
-      + `<label for="${id}">${meal.label}<div class="when">обавештење у ${meal.notifyAt}</div></label>`;
+      + `<label for="${id}">${meal.label}<div class="when">${kada}</div></label>`;
     prefs.append(li);
   }
 

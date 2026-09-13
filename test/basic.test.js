@@ -483,6 +483,72 @@ test('оброк траје, није тренутак', async () => {
   }
 });
 
+test('субота и недеља имају своју сатницу', async () => {
+  const { SCHEDULE } = await import('../src/config.js');
+  const { mealTimes, dayKind } = await import('../src/dates.js');
+
+  assert.equal(dayKind('2026-09-11'), 'radni');
+  assert.equal(dayKind('2026-09-12'), 'subota');
+  assert.equal(dayKind('2026-09-13'), 'nedelja');
+
+  // Доручак викендом креће сат касније и краће траје.
+  for (const dan of ['subota', 'nedelja']) {
+    assert.deepEqual(SCHEDULE[dan].dorucak, { startsAt: '07:30', endsAt: '08:15' });
+  }
+  assert.deepEqual(SCHEDULE.subota.rucak, { startsAt: '12:00', endsAt: '14:00' });
+  assert.deepEqual(SCHEDULE.nedelja.rucak, { startsAt: '12:00', endsAt: '13:00' });
+
+  // Викендом се вечера не служи, добија се као ланч пакет на ручку.
+  assert.equal(SCHEDULE.subota.vecera, null);
+  assert.equal(SCHEDULE.nedelja.vecera, null);
+  assert.equal(mealTimes('vecera', '2026-09-12'), null);
+  assert.equal(mealTimes('vecera', '2026-09-13'), null);
+
+  // Радним данима важи оно што стоји уз сам оброк.
+  const { MEALS } = await import('../src/config.js');
+  for (const key of Object.keys(MEALS)) {
+    const times = mealTimes(key, '2026-09-11');
+    assert.equal(times.startsAt, MEALS[key].startsAt, `${key}: радни дан мора да прати оброк`);
+    assert.equal(times.endsAt, MEALS[key].endsAt, `${key}: радни дан мора да прати оброк`);
+  }
+
+  // Свака сатница мора да се заврши после почетка.
+  for (const dan of Object.values(SCHEDULE)) {
+    for (const [key, times] of Object.entries(dan)) {
+      if (times) assert.ok(times.endsAt > times.startsAt, `${key}: крај мора да буде после почетка`);
+    }
+  }
+});
+
+test('викендом нема најаве за вечеру', async () => {
+  // Ланч пакет се добија на ручку, па би подсетник у пола шест увече звао
+  // на оброк кога нема. Најава пада на самој сатници, пре него што уопште
+  // погледа да ли мени за тај дан постоји.
+  const { notifyMeal } = await import('../src/jobs.js');
+
+  for (const dan of ['2026-09-12', '2026-09-13']) {
+    const ishod = await notifyMeal('vecera', { date: dan, force: true });
+    assert.match(ishod.skipped || '', /не служи по сатници/, `${dan}: вечера не сме да се најави`);
+  }
+
+  // Радним данима иде као и до сада.
+  const radni = await notifyMeal('vecera', { date: '2026-09-11', force: true });
+  assert.ok(!/не служи по сатници/.test(radni.skipped || ''), 'радним данима најава мора да остане');
+});
+
+test('приказ оброка чита сатницу тог дана, не оног уз оброк', () => {
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  assert.match(app, /function timesFor/, 'мора да постоји читање сатнице за задати дан');
+  assert.ok(
+    !/meal\.startsAt\}–\$\{meal\.endsAt/.test(app),
+    'заглавље картице не сме да пише времена уз сам оброк',
+  );
+  // Оброк без сатнице се прескаче кад се рачуна шта следи, иначе би
+  // апликација викендом најављивала вечеру у 18:30.
+  const deo = app.slice(app.indexOf('function whatsOn'), app.indexOf('function mealState'));
+  assert.match(deo, /if \(!times\) continue/, 'оброк без сатнице не улази у рачун шта следи');
+});
+
 test('приказ разликује три стања оброка', () => {
   const app = fs.readFileSync('./public/app.js', 'utf8');
   assert.match(app, /function mealState/, 'мора да постоји рачунање стања оброка');
@@ -513,13 +579,25 @@ test('прошло је прошло, без обзира на дан', () => {
   assert.match(app, /stanje === 'прошло' && isToday/, 'ознака стоји само на данашњем дану');
 });
 
-test('тачкица уз јело не зависи од тврде удаљености од врха', () => {
-  // У Samsung прегледачу тачкице нису биле поравнате са текстом, јер је
-  // положај био задат у пикселима од врха реда.
+test('тачкица уз јело седи на средини слова', () => {
+  // Мерење пиксела у Chrome-у и у Gecko-у: тачкица мерена од врха реда
+  // пада на средину реда, а то је два пиксела изнад средине малих слова.
+  // Оба прегледача су грешила једнако. Средину слова прегледач рачуна из
+  // фонта кад тачкица стоји у самом реду, као слово.
   const css = fs.readFileSync('./public/styles.css', 'utf8');
   const pravilo = css.slice(css.indexOf('.meal li::before'), css.indexOf('.meal .none'));
   assert.ok(!pravilo.includes('position: absolute'), 'тачкица не сме да буде апсолутно постављена');
-  assert.match(pravilo, /margin-top: 0\.55em/, 'положај мора да прати величину слова');
+  assert.ok(!pravilo.includes('margin-top'), 'тачкица не сме да се мери од врха реда');
+  assert.match(pravilo, /vertical-align: middle/, 'поравнање мора да иде по средини слова');
+
+  // Висећи увлак мора да буде тачно колико тачкица са својим размаком,
+  // иначе преломљени редови беже испод тачкице.
+  const red = css.slice(css.indexOf('.meal li {'), css.indexOf('.meal li::before'));
+  const uvlaka = Number(red.match(/padding-left: (\d+)px/)[1]);
+  assert.equal(red.match(/text-indent: -(\d+)px/)[1], String(uvlaka), 'увлак и негативни увлак морају да се поклопе');
+  const sirina = Number(pravilo.match(/width: (\d+)px/)[1]);
+  const razmak = Number(pravilo.match(/margin-right: (\d+)px/)[1]);
+  assert.equal(uvlaka, sirina + razmak, 'увлак мора да буде ширина тачкице плус размак');
 });
 
 test('померање на оброк ради и кад анимација не може', () => {

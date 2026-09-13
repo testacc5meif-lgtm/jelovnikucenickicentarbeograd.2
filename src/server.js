@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { config, MEALS, MEAL_KEYS } from './config.js';
+import { config, MEALS, MEAL_KEYS, SCHEDULE } from './config.js';
 import * as store from './db.js';
 import { today, shiftDate, weekdayOf, humanDate } from './dates.js';
 import { runIngest, lastIngest } from './ingest.js';
@@ -53,6 +53,10 @@ app.get('/api/meta', (req, res) => serveRead(req, res, async () => {
     vapidPublicKey: config.vapid.publicKey || null,
     pushEnabled: pushReady(),
     meals: MEAL_KEYS.map((key) => MEALS[key]),
+    // Времена уз сам оброк су радна сатница и остају због старијих
+    // прегледача који још нису повукли нову апликацију. Нова чита сатницу
+    // одавде, јер субота и недеља имају своју.
+    schedule: SCHEDULE,
     timezone: config.tz,
     today: today(),
     range,

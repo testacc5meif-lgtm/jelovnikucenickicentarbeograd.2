@@ -1,4 +1,4 @@
-import { config } from './config.js';
+import { config, SCHEDULE } from './config.js';
 
 const ISO = new Intl.DateTimeFormat('en-CA', {
   timeZone: config.tz,
@@ -29,6 +29,23 @@ export function shiftDate(isoDate, days) {
 export function weekdayOf(isoDate) {
   const [y, m, d] = isoDate.split('-').map(Number);
   return WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+}
+
+/** Врста дана за ISO датум: "radni", "subota" или "nedelja". */
+export function dayKind(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const index = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  if (index === 6) return 'subota';
+  if (index === 0) return 'nedelja';
+  return 'radni';
+}
+
+/**
+ * Време служења оброка тог дана, или `null` кад тог дана нема своје
+ * време. Викендом вечера нема, добија се као ланч пакет на ручку.
+ */
+export function mealTimes(mealKey, isoDate) {
+  return SCHEDULE[dayKind(isoDate)][mealKey] || null;
 }
 
 /** Читљив запис датума, нпр. "3. септембар". */

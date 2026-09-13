@@ -1,5 +1,6 @@
 import webpush from 'web-push';
 import { config, MEALS } from './config.js';
+import { mealTimes } from './dates.js';
 import { pickMessage } from './messages.js';
 import * as store from './db.js';
 
@@ -49,6 +50,10 @@ async function sendOne(row, payload) {
  */
 export async function sendMealTeaser(mealKey, targetDate, { force = false } = {}) {
   if (!ensureConfigured()) return { skipped: 'VAPID кључеви нису подешени' };
+  // Оброк који се тог дана не служи по сатници нема шта да најави.
+  // Викендом је то вечера: ланч пакет се добија на ручку, па би подсетник
+  // у пола шест увече звао на оброк кога нема.
+  if (!mealTimes(mealKey, targetDate)) return { skipped: `${mealKey} се ${targetDate} не служи по сатници` };
   if (!(await store.hasMenuFor(targetDate))) return { skipped: `нема менија за ${targetDate}` };
   if (!force && (await store.alreadySent(mealKey, targetDate))) return { skipped: 'већ послато' };
 
