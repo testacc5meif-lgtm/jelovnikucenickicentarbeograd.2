@@ -179,6 +179,11 @@ export async function saveSubscription(sub, prefs = {}) {
   );
 }
 
+/** Претплата за задату адресу, или null. Служи приказу да зна шта је упамћено. */
+export async function subscriptionByEndpoint(endpoint) {
+  return db.prepare('SELECT * FROM subscriptions WHERE endpoint = ?').get(endpoint) || null;
+}
+
 export async function deleteSubscription(endpoint) {
   db.prepare('DELETE FROM subscriptions WHERE endpoint = ?').run(endpoint);
 }

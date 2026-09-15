@@ -57,17 +57,29 @@ function escapeHtml(text) {
 
 /* ---------- Учитавање података ---------- */
 
+/**
+ * Распон дана који се тражи од сервера.
+ *
+ * Обично су то последња три дана и све што следи. Али кад нови јеловник
+ * касни, последњи дан који постоји је старији од три дана, па доња
+ * граница мора да се помери уназад до њега. Без тога доња граница
+ * прескочи горњу, упит врати нула дана и апликација остане празна.
+ * Тако је изгледала четвртог дана без новог јеловника.
+ */
+function menuWindow(today, first, last) {
+  const to = last || shift(today, 14);
+  const prag = shift(today, -3);
+  const donja = prag < to ? prag : shift(to, -3);
+  return { from: first && first > donja ? first : donja, to };
+}
+
 async function load() {
   const isRefresh = Boolean(state.meta);
   const keepScroll = window.scrollY;
 
   state.meta = await (await fetch('/api/meta')).json();
   state.today = nowThere().date;
-  const first = state.meta.range?.first;
-  const last = state.meta.range?.last;
-  const floor = shift(state.today, -3);
-  const from = first ? (first > floor ? first : floor) : state.today;
-  const to = last || shift(state.today, 14);
+  const { from, to } = menuWindow(state.today, state.meta.range?.first, state.meta.range?.last);
 
   const data = await (await fetch(`/api/menu?from=${from}&to=${to}`)).json();
   state.days = new Map(data.days.map((day) => [day.date, day]));
@@ -80,11 +92,16 @@ async function load() {
 
   const params = new URLSearchParams(location.search);
   const requested = params.get('dan');
+  // Кад данашњег дана нема у бази, отвара се последњи који постоји, не
+  // први. Између два јеловника то је најближи дан који има смисла
+  // показати. Раније се отварао најстарији од преосталих, па је човек
+  // шеснаестог видео тринаести и нигде није писало зашто.
+  const postojeci = [...state.days.keys()];
   state.selected = state.days.has(requested)
     ? requested
     : state.days.has(state.today)
       ? state.today
-      : [...state.days.keys()][0] || state.today;
+      : postojeci[postojeci.length - 1] || state.today;
 
   renderStrip();
   renderDay();
@@ -311,8 +328,17 @@ function renderDay() {
       + 'Веза са базом тренутно не ради, па подаци можда нису најновији.</p>'
     : '';
 
+  // Нови јеловник излази двапут месечно и никад тачно у поноћ. Између два
+  // изласка апликација показује последњи дан који постоји, а овај ред
+  // каже зашто, да човек не помисли да гледа данашњи јеловник.
+  const poslednji = [...state.days.keys()].pop();
+  const ceka = poslednji && state.today > poslednji
+    ? `<p class="ceka">Јеловник за данас још није објављен. Ово је последњи дан који постоји, `
+      + `${human(poslednji)}. Нови излази на почетку и средином месеца, а апликација га покупи сама.</p>`
+    : '';
+
   el('dayHead').innerHTML = `<h2>${isToday ? 'Данас' : WEEK_LONG[weekdayIndex(state.selected)]}, ${human(state.selected)}</h2>
-    <p>${isToday ? WEEK_LONG[weekdayIndex(state.selected)] : ''}</p>${stale}`;
+    <p>${isToday ? WEEK_LONG[weekdayIndex(state.selected)] : ''}</p>${ceka}${stale}`;
 
   el('empty').hidden = Boolean(day);
   const container = el('meals');
@@ -450,39 +476,30 @@ const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
   // iPad од новијих издања пријављује се као Mac, али има додир на екрану.
   || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-// На iPhone-у сваки прегледач ради на Apple-овом мотору, али само Safari
-// сме да дода апликацију на почетни екран. Chrome и Firefox тамо носе
-// своје ознаке у називу.
-const isIosSafari = () => isIos() && !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome/i.test(navigator.userAgent);
-
 /**
  * Зашто претплата тренутно није могућа, ако није.
  *
- * Редослед је важан. Провера за iPhone иде прва, јер тамо ниједан
- * прегледач осим Safari-ја нема ни PushManager, па би иначе искакала
- * порука да прегледач не подржава обавештења, што је тачно али
- * кориснику не каже шта да уради.
+ * Пресудно је да ли је апликација на почетном екрану, не који ју је
+ * прегледач тамо ставио. Провера је раније гледала назив прегледача и
+ * тражила Safari, па је апликација додата преко Chrome-а на iPhone-у
+ * добијала поруку да мора Safari, а дугме Сачувај остајало угашено. Човек
+ * га притисне и ништа се не деси, иако обавештења ту раде.
+ *
+ * На iPhone-у сваки прегледач ради на Apple-овом мотору, па инсталирана
+ * апликација има исте могућности без обзира одакле је додата.
  */
 function whyNotSubscribable() {
   if (!state.meta.pushEnabled) return 'Обавештења тренутно нису подешена на серверу.';
 
-  if (isIos()) {
-    if (!isIosSafari()) {
-      return 'На iPhone-у обавештења може да укључи само Safari. Отвори ову исту адресу у Safari-ју, '
-        + 'додај је на почетни екран преко дугмета Подели, па се претплати из тако отворене апликације.';
-    }
-    if (!isStandalone()) {
-      return 'На iPhone-у обавештења раде тек из апликације са почетног екрана. Додирни дугме Подели, '
-        + 'изабери „Додај на почетни екран”, отвори је одатле, па се претплати.';
-    }
-    if (!('PushManager' in window)) {
-      return 'Овај iPhone има старије издање система. Обавештења траже iOS 16.4 или новији.';
-    }
-    return null;
+  if (isIos() && !isStandalone()) {
+    return 'На iPhone-у обавештења раде тек из апликације на почетном екрану. Додирни дугме Подели, '
+      + 'изабери „Додај на почетни екран”, отвори је одатле, па се претплати.';
   }
 
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    return 'Овај прегледач не подржава обавештења.';
+    return isIos()
+      ? 'Овај iPhone има старије издање система. Обавештења траже iOS 16.4 или новији.'
+      : 'Овај прегледач не подржава обавештења.';
   }
   return null;
 }
@@ -527,6 +544,60 @@ function openSheet() {
   note.hidden = !prepreka;
   if (prepreka) note.textContent = prepreka;
   save.disabled = Boolean(prepreka);
+  if (!prepreka) refreshSheetState().catch(() => {});
+}
+
+/**
+ * Дописује шта сервер зна о овом уређају.
+ *
+ * Прозор се до сада пунио само из прегледача, па је човек коме
+ * обавештења већ стижу видео исти екран као неко ко још није укључио
+ * ништа, са дугметом Сачувај, као да ништа није било сачувано.
+ *
+ * Читање иде после исцртавања, никад пре. Бесплатан хостинг се буди и по
+ * двадесет секунди, а прозор мора да се отвори одмах.
+ */
+async function refreshSheetState() {
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  const note = el('sheetNote');
+  const otvoren = () => !el('sheet').hidden;
+
+  if (!subscription) {
+    if (!otvoren()) return;
+    note.textContent = 'Обавештења још нису укључена на овом уређају.';
+    note.hidden = false;
+    return;
+  }
+
+  const odgovor = await fetch('/api/prefs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ endpoint: subscription.endpoint }),
+  });
+  if (!odgovor.ok) return;
+  const upamceno = await odgovor.json();
+  if (!otvoren()) return;
+
+  if (!upamceno.subscribed) {
+    note.textContent = 'Овај уређај више није уписан на серверу. Притисни Сачувај да се обавештења поново укључе.';
+    note.hidden = false;
+    return;
+  }
+
+  // Оно што стоји на серверу је мерило, не оно што је остало у прегледачу.
+  state.prefs = upamceno.prefs;
+  remember(upamceno.prefs);
+  for (const meal of state.meta.meals) {
+    const box = el(`pref-${meal.key}`);
+    if (box) box.checked = Boolean(upamceno.prefs[meal.key]);
+  }
+  const ukljuceni = state.meta.meals.filter((meal) => upamceno.prefs[meal.key]);
+  note.textContent = ukljuceni.length
+    ? `Обавештења су укључена на овом уређају: ${ukljuceni.map((meal) => meal.label.toLowerCase()).join(', ')}. `
+      + 'Измене важе тек кад притиснеш Сачувај.'
+    : 'Овај уређај је уписан, али ниједан оброк није изабран, па обавештења не стижу.';
+  note.hidden = false;
 }
 
 /**

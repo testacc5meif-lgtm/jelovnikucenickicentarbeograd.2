@@ -218,6 +218,18 @@ main { padding: 0 16px; }
 }
 .meal .none { color: var(--muted); font-size: 14px; }
 
+/* Ред који каже да нови јеловник још није објављен. Мора да се примети,
+   али не сме да личи на грешку, јер није. */
+.ceka {
+  margin: 8px 0 0;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 /* Ланч пакет викендом: нема сатнице, па ред испод јела каже где се узима. */
 .meal .paket {
   margin: 9px 0 0;

@@ -13,6 +13,19 @@ const MONTHS = [
   'јул', 'август', 'септембар', 'октобар', 'новембар', 'децембар',
 ];
 
+const CLOCK = new Intl.DateTimeFormat('en-GB', {
+  timeZone: config.tz,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+/** Минути од поноћи у зони установе. */
+export function minutesNow(at = new Date()) {
+  const [hour, minute] = CLOCK.format(at).split(':').map(Number);
+  return hour * 60 + minute;
+}
+
 /** Данашњи датум у зони установе, као "YYYY-MM-DD". */
 export function today(at = new Date()) {
   return ISO.format(at);

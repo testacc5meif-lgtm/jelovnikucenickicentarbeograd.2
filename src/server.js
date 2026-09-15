@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { config, MEALS, MEAL_KEYS, SCHEDULE } from './config.js';
 import * as store from './db.js';
 import { today, shiftDate, weekdayOf, humanDate } from './dates.js';
-import { runIngest, lastIngest } from './ingest.js';
+import { lastIngest } from './ingest.js';
+import { checkSource } from './jobs.js';
 import { sendMealTeaser, pushReady } from './push.js';
 import { checkOcr } from './ocr.js';
 import { cronRoutes } from './cron-routes.js';
@@ -106,6 +107,27 @@ function validSubscription(body) {
   );
 }
 
+/**
+ * Шта је за ову претплату упамћено на серверу.
+ *
+ * Приказ је до сада читао само оно што стоји у прегледачу, па је човек
+ * коме обавештења већ стижу отварао прозор и видео искључено стање, као
+ * да ништа није сачувано. Адреса претплате је дугачка и иде у телу
+ * захтева, никад у путањи, да не заврши у дневницима посредника.
+ */
+app.post('/api/prefs', async (req, res) => {
+  const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint : '';
+  if (!/^https:\/\//.test(endpoint)) return res.status(400).json({ error: 'Неисправна адреса претплате' });
+
+  const row = await store.subscriptionByEndpoint(endpoint);
+  if (!row) return res.json({ subscribed: false });
+
+  return res.json({
+    subscribed: true,
+    prefs: Object.fromEntries(MEAL_KEYS.map((key) => [key, Boolean(row[key])])),
+  });
+});
+
 app.post('/api/subscribe', async (req, res) => {
   if (!validSubscription(req.body)) return res.status(400).json({ error: 'Неисправна претплата' });
   await store.saveSubscription(req.body.subscription, req.body.prefs || {});
@@ -127,9 +149,11 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Иде кроз checkSource, не право у обраду, да и ручно покренута провера
+// надокнади најаве које су пропале док јеловника још није било.
 app.post('/api/admin/ingest', requireAdmin, async (req, res) => {
   try {
-    res.json(await runIngest());
+    res.json(await checkSource());
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

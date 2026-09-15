@@ -76,6 +76,7 @@ export const hasMenuFor = gated(store.hasMenuFor);
 export const allItemTexts = gated(store.allItemTexts);
 export const saveSubscription = gated(store.saveSubscription);
 export const deleteSubscription = gated(store.deleteSubscription);
+export const subscriptionByEndpoint = gated(store.subscriptionByEndpoint);
 export const subscribersFor = gated(store.subscribersFor);
 export const countSubscribers = gated(store.countSubscribers);
 export const markFailure = gated(store.markFailure);

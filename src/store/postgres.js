@@ -259,6 +259,12 @@ export async function deleteSubscription(endpoint) {
 
 const MEAL_COLUMNS = { dorucak: 'dorucak', rucak: 'rucak', vecera: 'vecera' };
 
+/** Претплата за задату адресу, или null. Служи приказу да зна шта је упамћено. */
+export async function subscriptionByEndpoint(endpoint) {
+  const { rows } = await query('SELECT * FROM subscriptions WHERE endpoint = $1', [endpoint]);
+  return rows[0] || null;
+}
+
 export async function subscribersFor(meal) {
   const column = MEAL_COLUMNS[meal];
   if (!column) throw new Error(`Непознат оброк: ${meal}`);

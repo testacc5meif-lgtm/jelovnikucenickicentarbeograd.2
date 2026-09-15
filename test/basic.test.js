@@ -419,10 +419,11 @@ test('приказ тражи свеж податак мимо кеша одма
 });
 
 test('порука о обавештењима каже шта да се уради, за сваки уређај', async () => {
-  // На iPhone-у сваки прегледач ради на Apple-овом мотору, али само Safari
-  // сме да дода апликацију на почетни екран. Chrome тамо нема PushManager,
-  // па је корисник добијао поруку да прегледач не подржава обавештења,
-  // што је тачно али не каже шта даље.
+  // Пресудно је да ли је апликација на почетном екрану, не који ју је
+  // прегледач тамо ставио. Провера је раније тражила Safari, па је
+  // апликација додата преко Chrome-а на iPhone-у добијала поруку да мора
+  // Safari, а дугме Сачувај остајало угашено. Пријављено са уређаја:
+  // дугме се притисне и ништа се не деси, иако обавештења ту раде.
   const src = fs.readFileSync('./public/app.js', 'utf8');
   const telo = src.slice(src.indexOf('const isStandalone ='), src.indexOf('function openSheet'));
 
@@ -436,9 +437,19 @@ test('порука о обавештењима каже шта да се ура�
 
   const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15';
 
-  assert.match(proba(`${IOS} CriOS/120.0`), /Safari/, 'Chrome на iPhone-у мора да упути на Safari');
-  assert.match(proba(`${IOS} Version/17.0 Safari/604.1`), /почетни екран/, 'Safari мора да упути на додавање на почетни екран');
-  assert.equal(proba(`${IOS} Version/17.0 Safari/604.1`, { standalone: true }), null, 'из инсталиране апликације претплата мора да буде могућа');
+  // Док апликација није на почетном екрану, порука мора да каже како се
+  // тамо ставља, а не да упућује на други прегледач.
+  for (const ua of [`${IOS} CriOS/120.0`, `${IOS} Version/17.0 Safari/604.1`]) {
+    const poruka = proba(ua);
+    assert.match(poruka, /почетни екран/, 'порука мора да упути на додавање на почетни екран');
+    assert.ok(!/Safari/.test(poruka), 'порука не сме да тражи баш Safari');
+  }
+
+  // Инсталирана апликација ради без обзира на то одакле је додата.
+  for (const ua of [`${IOS} Version/17.0 Safari/604.1`, `${IOS} CriOS/120.0`]) {
+    assert.equal(proba(ua, { standalone: true }), null, 'из инсталиране апликације претплата мора да буде могућа');
+  }
+
   assert.match(proba(`${IOS} Version/15.0 Safari/604.1`, { standalone: true, push: false }), /16\.4/, 'старији iOS мора да добије тачан разлог');
   assert.equal(proba('Mozilla/5.0 (Linux; Android 14) Chrome/120.0 Mobile'), null, 'на Android-у претплата мора да буде могућа');
 });
@@ -547,6 +558,118 @@ test('приказ оброка чита сатницу тог дана, не о
   // апликација викендом најављивала вечеру у 18:30.
   const deo = app.slice(app.indexOf('function whatsOn'), app.indexOf('function mealState'));
   assert.match(deo, /if \(!times\) continue/, 'оброк без сатнице не улази у рачун шта следи');
+});
+
+test('пропуштена најава се надокнађује чим јеловник стигне', async () => {
+  // Нови јеловник никад не изађе тачно у поноћ. Док га нема, свака најава
+  // за те дане се прескаче, а прескочена се не понавља сама. Чим уђе у
+  // базу, надокнађује се оно што је пропало, али само оно што још има
+  // смисла: оброк који је прошао се не најављује, ручак и вечера чекају
+  // свој термин, а ноћу се не шаље ништа.
+  const { catchUpNotifications } = await import('../src/jobs.js');
+  const store = await import('../src/db.js');
+  const { ingestFixture } = await import('../src/ingest.js');
+  await store.ready;
+  if (!(await store.hasMenuFor('2026-09-10'))) {
+    await ingestFixture(JSON.parse(fs.readFileSync('./fixtures/jelovnik-2026-09-I.json', 'utf8')));
+  }
+
+  // Београдско време иде два сата испред UTC-а у септембру.
+  const uSat = (h, m = 0) => new Date(Date.UTC(2026, 8, 10, h - 2, m));
+  const pokusaji = async (now) => {
+    const zapis = [];
+    await catchUpNotifications({ now, log: (line) => zapis.push(line) });
+    return zapis.map((line) => line.match(/надокнада најаве: (\S+) за (\S+):/)).filter(Boolean)
+      .map(([, obrok, dan]) => `${obrok} ${dan}`);
+  };
+
+  // У једанаест је ручак пропустио свој термин у 10:30, а још се служи.
+  assert.deepEqual(await pokusaji(uSat(11)), ['Ручак 2026-09-10']);
+
+  // У пола седам ујутру доручак се служи, а његова синоћна најава је пала.
+  assert.deepEqual(await pokusaji(uSat(6, 45)), ['Доручак 2026-09-10']);
+
+  // У два по поноћи се не буди нико.
+  assert.deepEqual(await pokusaji(uSat(2)), []);
+
+  // У једанаест увече на реду је сутрашњи доручак, данашњи је давно прошао.
+  assert.deepEqual(await pokusaji(uSat(23)), ['Доручак 2026-09-11']);
+
+  // Суботом вечере нема, па нема ни шта да се надокнади.
+  const subota = new Date(Date.UTC(2026, 8, 12, 17, 0)); // 19:00 по београдском
+  assert.deepEqual(await pokusaji(subota), []);
+});
+
+test('сервер враћа шта је за претплату упамћено', async () => {
+  // Приказ је до сада читао само оно што стоји у прегледачу, па је човек
+  // коме обавештења стижу видео искључено стање, као да ништа није
+  // сачувано. Сада може да пита сервер.
+  const store = await import('../src/db.js');
+  await store.ready;
+
+  const endpoint = 'https://proba.example/претплата-за-тест';
+  await store.saveSubscription(
+    { endpoint, keys: { p256dh: 'kljuc', auth: 'tajna' } },
+    { dorucak: true, rucak: false, vecera: true },
+  );
+
+  const red = await store.subscriptionByEndpoint(endpoint);
+  assert.ok(red, 'претплата мора да се нађе по адреси');
+  assert.ok(red.dorucak, 'доручак је био укључен');
+  assert.ok(!red.rucak, 'ручак је био искључен');
+  assert.ok(red.vecera, 'вечера је била укључена');
+
+  await store.deleteSubscription(endpoint);
+  assert.equal(await store.subscriptionByEndpoint(endpoint), null, 'обрисана претплата се више не налази');
+});
+
+test('прозор за обавештења пита сервер шта је упамћено', () => {
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  assert.match(app, /function refreshSheetState/, 'мора да постоји читање стања са сервера');
+  assert.match(app, /'\/api\/prefs'/, 'адреса претплате иде у телу захтева, не у путањи');
+
+  const sheet = app.slice(app.indexOf('function openSheet'), app.indexOf('async function refreshSheetState'));
+  assert.ok(
+    sheet.indexOf('prefs.append') < sheet.indexOf('refreshSheetState'),
+    'прозор се прво исцрта, па тек онда пита сервер',
+  );
+});
+
+test('распон дана обухвата последњи јеловник и кад он касни', () => {
+  // Четвртог дана без новог јеловника доња граница упита прескочила је
+  // горњу, сервер је вратио нула дана, а апликација остала празна. Мерено
+  // у прегледачу: from 2026-09-12, to 2026-09-11, нула дана.
+  const src = fs.readFileSync('./public/app.js', 'utf8');
+  const telo = src.slice(src.indexOf('const shift ='), src.indexOf('const weekdayIndex ='))
+    + src.slice(src.indexOf('function menuWindow'), src.indexOf('async function load'));
+  const menuWindow = new Function(`${telo}
+; return menuWindow;`)();
+
+  // Обичан дан: последња три дана и све што следи.
+  assert.deepEqual(menuWindow('2026-09-15', '2026-09-01', '2026-09-30'),
+    { from: '2026-09-12', to: '2026-09-30' });
+
+  // Јеловник касни четири дана: прозор мора да се помери уназад до њега.
+  const kasni = menuWindow('2026-09-15', '2026-09-01', '2026-09-11');
+  assert.ok(kasni.from <= kasni.to, 'доња граница не сме да прескочи горњу');
+  assert.equal(kasni.to, '2026-09-11', 'последњи дан који постоји мора да уђе у прозор');
+  assert.equal(kasni.from, '2026-09-08');
+
+  // Почетак месеца: не тражи се пре првог дана који уопште постоји.
+  assert.equal(menuWindow('2026-09-03', '2026-09-01', '2026-09-15').from, '2026-09-01');
+});
+
+test('без данашњег јеловника отвара се последњи дан који постоји', () => {
+  // Шеснаестог, док нови PDF не стигне, апликација је отварала најстарији
+  // преостали дан и нигде није писало зашто.
+  const app = fs.readFileSync('./public/app.js', 'utf8');
+  const izbor = app.slice(app.indexOf('const postojeci ='), app.indexOf('renderStrip();'));
+  assert.match(izbor, /postojeci\[postojeci\.length - 1\]/, 'бира се последњи дан, не први');
+  assert.ok(!/\[\.\.\.state\.days\.keys\(\)\]\[0\]/.test(izbor), 'најстарији дан не сме да буде избор');
+
+  const dan = app.slice(app.indexOf('function renderDay'), app.indexOf('function renderUpNext'));
+  assert.match(dan, /state\.today > poslednji/, 'мора да се препозна да јеловника за данас нема');
+  assert.match(dan, /још није објављен/, 'мора да пише зашто се гледа стари дан');
 });
 
 test('приказ разликује три стања оброка', () => {
