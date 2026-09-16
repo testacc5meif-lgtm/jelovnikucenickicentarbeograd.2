@@ -75,11 +75,13 @@ function menuWindow(today, first, last) {
   return { from: first && first > donja ? first : donja, to };
 }
 
-async function load() {
+async function load({ meta } = {}) {
   const isRefresh = Boolean(state.meta);
   const keepScroll = window.scrollY;
 
-  state.meta = await (await fetch('/api/meta')).json();
+  // Кад позивалац већ држи свеж опис, не тражи се поново. Тако освежавање
+  // мимо кеша не заврши тако што дане узме по старом опсегу из кеша.
+  state.meta = meta || await (await fetch('/api/meta')).json();
   state.today = nowThere().date;
   const { from, to } = menuWindow(state.today, state.meta.range?.first, state.meta.range?.last);
 
@@ -177,6 +179,18 @@ async function refreshMeta() {
   try {
     const fresh = await (await fetch('/api/meta?svez=1')).json();
     if (JSON.stringify(fresh) === JSON.stringify(state.meta)) return;
+
+    // Нов јеловник помера опсег дана, а дани стоје у кешу под адресом са
+    // старим опсегом, па их освежавање самог описа не дотиче. Трака се
+    // тада црта из старих дана и шеснаестог и даље стаје на петнаести,
+    // иако сервер одавно има нов јеловник. Зато се, чим се тражени распон
+    // промени, учита све испочетка, свежим описом у руци.
+    const pre = menuWindow(state.today, state.meta?.range?.first, state.meta?.range?.last);
+    const posle = menuWindow(state.today, fresh.range?.first, fresh.range?.last);
+    if (pre.from !== posle.from || pre.to !== posle.to) {
+      await load({ meta: fresh });
+      return;
+    }
 
     // Поновно исцртавање не сме да помери страницу под прстом корисника.
     const zadrzi = window.scrollY;
