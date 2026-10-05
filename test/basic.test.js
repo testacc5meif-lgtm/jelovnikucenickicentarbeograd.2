@@ -129,7 +129,7 @@ test('када нема ниједног јеловника, враћају се
 
 /* ---------- Реконструкција табеле и речник ---------- */
 
-const { itemsFrom, assembleDays } = await import('../src/table.js');
+const { itemsFrom, assembleDays, headerColumns, trimTail } = await import('../src/table.js');
 const { buildLexicon, correctItem, splitMerged } = await import('../src/dictionary.js');
 
 const asLine = (text, top = 0, conf = 95) => ({
@@ -156,9 +156,84 @@ test('датум који скен није прочитао следи из р�
   assert.equal(days[1].dateGuessed, true);
 });
 
-test('датум који одступа од низа означава се за проверу', () => {
-  const days = assembleDays([[{ date: '2026-09-01' }, { date: '2026-09-05' }]]);
-  assert.equal(days[1].dateConflict, '2026-09-02');
+const { isBorderNoise } = await import('../src/ocr.js');
+
+test('знак који носи значење не пролази као ивица табеле', () => {
+  // Ивице табеле јесу шум, али коса црта раздваја понуђено, запета делове
+  // ставке, а двотачка уводи састав ланч пакета. Све троје скен уме да
+  // одвоји у засебну реч, и све троје мора да преживи.
+  assert.equal(isBorderNoise('/'), false);
+  assert.equal(isBorderNoise(','), false);
+  assert.equal(isBorderNoise(':'), false);
+  assert.equal(isBorderNoise('|'), true);
+  assert.equal(isBorderNoise('ll'), true);
+  assert.equal(isBorderNoise('_'), true);
+});
+
+test('везник на крају реда држи ставку на окупу', () => {
+  // "кифла" јесте познато јело, али претходни ред се завршава везником,
+  // па ставка тече даље.
+  const lexicon = buildLexicon(['кифла', 'паштета']);
+  const items = itemsFrom([
+    asLine('-ланч: паштета, чоколадно млеко и', 0),
+    asLine('кифла', 30),
+  ], lexicon);
+  assert.deepEqual(items, ['ланч: паштета, чоколадно млеко и кифла']);
+});
+
+test('заграду коју скен није прочитао обрада затвара', () => {
+  const items = itemsFrom([asLine('-посластичарски колач (штрудла са маком', 0)]);
+  assert.deepEqual(items, ['посластичарски колач (штрудла са маком)']);
+});
+
+test('велико слово усред јела враћа се у мало', () => {
+  // Скен ћ понекад прочита као Ћ. Јеловник јела пише малим словом.
+  const items = itemsFrom([asLine('-Ћуфта у парадајз сосу', 0)]);
+  assert.deepEqual(items, ['ћуфта у парадајз сосу']);
+});
+
+test('разломак уз млеко се враћа', () => {
+  // Скен ¼ прочита као "%" или "7".
+  const items = itemsFrom([asLine('-ланч: нарезак, кроасан млеко % и хлеб', 0)]);
+  assert.deepEqual(items, ['ланч: нарезак, кроасан млеко ¼ и хлеб']);
+});
+
+test('прескочен дан у документу не важи за несклад', () => {
+  // Документ не мора да садржи непрекинут низ дана. Док је ова рупа
+  // важила за несклад, цео јеловник за октобар 2026. био је одбијен.
+  const days = assembleDays([[{ date: '2026-10-13' }, { date: '2026-10-15' }]]);
+  assert.equal(days[1].date, '2026-10-15');
+  assert.equal(days[1].dateConflict, undefined);
+});
+
+test('датум који није после претходног означава се за проверу', () => {
+  // Ово значи да подела на дане више не прати документ.
+  const days = assembleDays([[{ date: '2026-09-05' }, { date: '2026-09-01' }]]);
+  assert.equal(days[1].dateConflict, '2026-09-05');
+});
+
+test('датум се не погађа кад низ није јединствен', () => {
+  // Једно празно место, а три дана разлике: прочитан дан је могао да буде
+  // и 14. и 15. Погађање би јела приписало погрешном дану, па датум остаје
+  // непознат, дан испада у normalize, а рупа се пријави као упозорење.
+  const days = assembleDays([[
+    { date: '2026-10-13' }, { date: null }, { date: '2026-10-16' },
+  ]]);
+  assert.equal(days[1].date, null);
+  assert.equal(days[1].dateGuessed, undefined);
+});
+
+test('средина колоне је медијана свих заглавља у документу', () => {
+  // Документ не понавља заглавље уз сваки дан, па средина мора да се
+  // измери на целом документу. Једно промашено читање не сме да је помери.
+  const word = (text, cx) => ({ text, cx, x: cx, y: 0, w: 10, h: 30, cy: 0, conf: 95 });
+  const columns = headerColumns([
+    [word('ДОРУЧАК', 250), word('РУЧАК', 780), word('ВЕЧЕРА', 1250)],
+    [word('ДОРУЧАК', 260), word('ВЕЧЕРА', 1260)],
+    [word('ДОРУЧАК', 9000)],
+  ]);
+  assert.equal(columns.dorucak, 260);
+  assert.equal(columns.vecera, 1260);
 });
 
 test('речник исправља реч прочитану латиницом', () => {
@@ -167,12 +242,64 @@ test('речник исправља реч прочитану латиницом
   assert.equal(correctItem('npoja', lexicon), 'проја');
 });
 
-test('речник не дира непознату ћириличну реч', () => {
-  // Речник је намерно непотпун, нова јела се стално појављују. Замена
-  // непознате ћириличне речи сличном познатом више квари него што поправља.
-  const lexicon = buildLexicon(['сок', 'сос']);
+test('речник не дира кратку ћириличну реч', () => {
+  // Код кратких речи једно слово разлике пречесто значи другу реч, а не
+  // грешку скена.
+  const lexicon = buildLexicon(['сок', 'сок', 'сос', 'сос']);
   assert.equal(correctItem('сосу', lexicon), 'сосу');
   assert.equal(correctItem('сомун', lexicon), 'сомун');
+});
+
+test('често виђена реч исправља погрешно прочитану', () => {
+  // Ово је учење о коме је реч: јело које се понавља почне да исправља
+  // своје погрешно прочитане облике.
+  const lexicon = buildLexicon([{ label: 'хлеб', n: 12 }]);
+  assert.equal(correctItem('хлаб', lexicon), 'хлеб');
+  assert.equal(correctItem('Хлаб', lexicon), 'Хлеб');
+});
+
+test('реч виђена само једном не исправља ништа', () => {
+  // Виђена једном може и сама да буде погрешно прочитана, па би исправка
+  // ка њој ширила грешку.
+  const lexicon = buildLexicon(['хлеб']);
+  assert.equal(correctItem('хлаб', lexicon), 'хлаб');
+});
+
+test('завршетак речи се не дира', () => {
+  // У српском завршетак носи падеж, а не грешку скена. Мерено на
+  // октобру 2026: свака измена последњег слова покварила је исправну реч.
+  const lexicon = buildLexicon([
+    { label: 'месом', n: 20 }, { label: 'паприка', n: 20 }, { label: 'милерама', n: 20 },
+  ]);
+  assert.equal(correctItem('месо', lexicon), 'месо');
+  assert.equal(correctItem('паприкаш', lexicon), 'паприкаш');
+  assert.equal(correctItem('милерам', lexicon), 'милерам');
+});
+
+test('ново јело остаје како је прочитано', () => {
+  // Речник је намерно непотпун, нова јела се стално појављују.
+  const lexicon = buildLexicon([{ label: 'пилетина', n: 20 }]);
+  assert.equal(correctItem('сарма', lexicon), 'сарма');
+});
+
+test('два једнако честа кандидата не разрешавају се на силу', () => {
+  const lexicon = buildLexicon([{ label: 'хлеб', n: 10 }, { label: 'хлиб', n: 10 }]);
+  assert.equal(correctItem('хлаб', lexicon), 'хлаб');
+});
+
+test('реп испод табеле се скида са напомене', () => {
+  // Потписи и печат испод табеле, које скен прочита као кратке речи.
+  assert.equal(
+    trimTail('ВОДЕ МОЖЕ ДОЋИ ДО ИЗМЕНЕ ЈЕЛОВНИКА. И У И река .'),
+    'ВОДЕ МОЖЕ ДОЋИ ДО ИЗМЕНЕ ЈЕЛОВНИКА.',
+  );
+  // Права друга реченица има дуже речи, па остаје.
+  assert.equal(
+    trimTail('Јеловник може да се промени. Хвала на разумевању.'),
+    'Јеловник може да се промени. Хвала на разумевању.',
+  );
+  // Алергени немају тачку и не смеју да се скрате.
+  assert.equal(trimTail('глутен, јаја, млеко, риба'), 'глутен, јаја, млеко, риба');
 });
 
 test('слепљене ставке се раздвајају само кад су оба дела позната', () => {
@@ -330,6 +457,16 @@ test('несклад датума зауставља упис', () => {
   const verdict = acceptMenu(menu);
   assert.equal(verdict.ok, false);
   assert.ok(verdict.problems.some((p) => p.includes('датум')), verdict.problems.join('; '));
+});
+
+test('прескочен дан се пријављује, али не зауставља упис', () => {
+  // Јеловник коме недостаје дан бољи је од јеловника од прошлог месеца.
+  const raw = validMenu();
+  raw.days.splice(5, 1);
+  const verdict = acceptMenu(normalize(raw));
+  assert.equal(verdict.ok, true, verdict.problems.join('; '));
+  assert.equal(verdict.stats.missingDays, 1);
+  assert.ok(verdict.warnings.some((w) => w.includes('нема 1 дана')), verdict.warnings.join('; '));
 });
 
 test('потпуно празан резултат зауставља упис', () => {

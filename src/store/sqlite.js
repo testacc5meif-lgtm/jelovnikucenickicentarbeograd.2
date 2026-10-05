@@ -157,6 +157,12 @@ export async function allItemTexts() {
   return db.prepare('SELECT DISTINCT label FROM items').all().map((row) => row.label);
 }
 
+/** Ставке са бројем појављивања, за речник за исправку. */
+export async function itemCounts() {
+  return db.prepare('SELECT label, COUNT(*) AS n FROM items GROUP BY label').all()
+    .map((row) => ({ label: row.label, n: Number(row.n) }));
+}
+
 /* ---------- Претплате ---------- */
 
 export async function saveSubscription(sub, prefs = {}) {

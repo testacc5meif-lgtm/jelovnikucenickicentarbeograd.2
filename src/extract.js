@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { toPageImages, cleanup } from './pdf-pages.js';
 import { readWords } from './ocr.js';
-import { parsePage, parseFooter, assembleDays } from './table.js';
+import { parsePage, parseFooter, assembleDays, headerColumns } from './table.js';
 import { buildLexicon, correctDay } from './dictionary.js';
 import { toCyrillic } from './translit.js';
 import { weekdayOf } from './dates.js';
@@ -90,15 +90,17 @@ export async function extractMenu(pdfBytes, { knownItems = [] } = {}) {
     // Речник се гради пре читања, јер помаже већ при подели на ставке.
     const lexicon = buildLexicon([...seedItems(), ...knownItems]);
 
-    const pages = [];
-    let lastWords = [];
-    for (const file of files) {
-      lastWords = await readWords(file);
-      pages.push(parsePage(lastWords, lexicon));
-    }
+    // Све стране се прво прочитају, па тек онда деле на дане. Средине
+    // колона морају да се измере на целом документу, јер дан који своје
+    // заглавље нема нема одакле да их узме.
+    const perPage = [];
+    for (const file of files) perPage.push(await readWords(file));
+
+    const columns = headerColumns(perPage);
+    const pages = perPage.map((words) => parsePage(words, lexicon, columns));
 
     // Алерго подаци и напомена стоје на последњој страни, испод табеле.
-    const footer = parseFooter(lastWords);
+    const footer = parseFooter(perPage.at(-1) ?? []);
     const days = assembleDays(pages);
     const corrected = days.map((day) => correctDay(day, lexicon));
 
@@ -115,7 +117,7 @@ export async function extractMenu(pdfBytes, { knownItems = [] } = {}) {
     return {
       menu,
       accepted,
-      warnings: accepted.problems,
+      warnings: accepted.warnings,
       stats: { pages: files.length, method, lexicon: lexicon.words.size, ...accepted.stats },
     };
   } finally {

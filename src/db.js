@@ -74,6 +74,7 @@ export const listDays = gated(store.listDays);
 export const dayRange = gated(store.dayRange);
 export const hasMenuFor = gated(store.hasMenuFor);
 export const allItemTexts = gated(store.allItemTexts);
+export const itemCounts = gated(store.itemCounts);
 export const saveSubscription = gated(store.saveSubscription);
 export const deleteSubscription = gated(store.deleteSubscription);
 export const subscriptionByEndpoint = gated(store.subscriptionByEndpoint);

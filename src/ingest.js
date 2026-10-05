@@ -58,7 +58,7 @@ export async function runIngest({ log = console.log } = {}) {
 
     // Речник за исправку расте са сваким обрађеним јеловником, јер се
     // иста јела понављају из циклуса у циклус.
-    const { menu, accepted, stats } = await extractMenu(bytes, { knownItems: await store.allItemTexts() });
+    const { menu, accepted, stats } = await extractMenu(bytes, { knownItems: await store.itemCounts() });
 
     if (!accepted.ok) {
       rejected.push({ url: link.readable, problems: accepted.problems, stats: accepted.stats });
@@ -68,8 +68,9 @@ export async function runIngest({ log = console.log } = {}) {
     }
 
     await storeMenu({ url: link.url, sha256, bytes: bytes.length, menu });
-    processed.push({ url: link.readable, days: menu.days.length, stats });
+    processed.push({ url: link.readable, days: menu.days.length, stats, warnings: accepted.warnings });
     log(`Уписано дана: ${menu.days.length} (${menu.periodFrom} - ${menu.periodTo}), речник ${stats.lexicon} речи`);
+    for (const warning of accepted.warnings) log(`  провери: ${warning}`);
   }
 
   lastRun = {
@@ -78,6 +79,9 @@ export async function runIngest({ log = console.log } = {}) {
     processed: processed.length,
     skipped: skipped.length,
     problems: rejected.flatMap((entry) => entry.problems),
+    // Налази који нису зауставили упис. Јеловник је у бази, али вреди
+    // погледати: обично значе да обрада није нашла један дан.
+    warnings: processed.flatMap((entry) => entry.warnings ?? []),
   };
 
   return { processed, skipped, rejected };

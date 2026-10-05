@@ -1,9 +1,16 @@
 // Реконструкција табеле јеловника из координата речи.
 //
-// Ослања се на две особине документа, обе проверене на правом скену:
-// заглавља ДОРУЧАК, РУЧАК и ВЕЧЕРА стоје на истим x координатама у сваком
-// дневном блоку, а нова ставка увек почиње цртицом. Увлачење не помаже,
-// јер наставак преломљеног реда почиње на истој x координати као и ставка.
+// Ослања се на три особине документа, све проверене на правом скену:
+// дан почиње редом који отвара датум, заглавља ДОРУЧАК, РУЧАК и ВЕЧЕРА
+// стоје на истим x координатама кроз цео документ, а нова ставка увек
+// почиње цртицом. Увлачење не помаже, јер наставак преломљеног реда
+// почиње на истој x координати као и ставка.
+//
+// Дан се тражи по датуму, а не по заглављу колона, зато што документ то
+// заглавље не понавља уз сваки дан. У јеловнику за октобар 2026. дани
+// 02.10. и 14.10. немају своје заглавље: испод датума одмах почињу јела.
+// Док су се блокови тражили по заглављима, та два дана нису постојала, а
+// њихова јела су се прелила у претходни дан.
 
 const MEALS = ['dorucak', 'rucak', 'vecera'];
 const HEADERS = { ДОРУЧАК: 'dorucak', РУЧАК: 'rucak', ВЕЧЕРА: 'vecera' };
@@ -11,11 +18,13 @@ const DATE = /(\d{2})\.(\d{2})\.(\d{4})/;
 const FOOTER = /Верзија|Страница|примене|АЛЕРГО|НАПОМЕНА|састав/i;
 const DASH = /^[-–—]/;
 
-// Растојања унутар блока, изражена у висинама реда, да не зависе од DPI-ја.
-const BODY_TOP = 1.3;   // од заглавља до прве ставке
-const DATE_BAND = 4;    // колико изнад заглавља тражимо датум
-const NEXT_GAP = 3.2;   // колико изнад следећег заглавља блок престаје
-const BLOCK_MAX = 16;   // највећа висина последњег блока на страни
+// Крај реда после кога ставка сигурно тече даље: зарез, или везник
+// који сам за себе не може да затвори ставку.
+const CONTINUES = /(?:,|(?:^|\s)(?:и|са|од|у))\s*$/u;
+
+// Подножје стране почиње одмах испод табеле, па се блок последњег дана
+// затвара на њему. Израз је у висинама реда, да не зависи од DPI-ја.
+const FOOTER_GAP = 0.3;
 
 /** Групише речи у визуелне редове по вертикалном положају. */
 export function toLines(words) {
@@ -98,10 +107,12 @@ export function itemsFrom(lines, lexicon = null) {
       continue;
     }
 
-    // Зарез на крају претходног реда значи да реченица тече даље. Без њега
-    // би се "кајгана са крањском кобасицом, / фета сир" расекло надвоје,
-    // јер је "фета сир" и само за себе познато јело.
-    const continues = /,$/.test(items.at(-1) ?? '');
+    // Зарез или везник на крају претходног реда значи да реченица тече
+    // даље. Без зареза би се "кајгана са крањском кобасицом, / фета сир"
+    // расекло надвоје, јер је "фета сир" и само за себе познато јело. Без
+    // везника исто тако "...чоколадно млеко и / кифла", јер је и "кифла"
+    // познато јело.
+    const continues = CONTINUES.test(items.at(-1) ?? '');
 
     const dish = continues ? null : knownDish(text, lexicon);
     if (dish) {
@@ -114,52 +125,139 @@ export function itemsFrom(lines, lexicon = null) {
   return items.map(tidy).filter(Boolean);
 }
 
+// Јеловник пише јела малим словом, без изузетка: у два ручно преписана
+// циклуса, 390 ставки, нема ниједног великог слова. Скен ипак понекад
+// прочита ћ као Ћ, па испадне "Ћуфта". Велико слово иза кога иде мало
+// враћа се у мало. Реч у целости великим словима остаје како јесте.
+const BIG_LETTER = /\p{Lu}(?=\p{Ll})/gu;
+
+// Разломак ¼ скен не прочита, него врати "%" или "7". У овом документу
+// стоји само уз млеко у ланч пакету ("млеко ¼ и кифла"), па се ту враћа.
+const QUARTER = /(млеко)\s+[%7]\s+(и)(?=\s|$)/giu;
+
 function tidy(text) {
   return text
+    .replace(QUARTER, '$1 ¼ $2')
     .replace(/^["'`«»]+/, '')
     .replace(/\s+([,.)])/g, '$1')
     .replace(/\(\s+/g, '(')
     .replace(/\s{2,}/g, ' ')
+    .replace(/^(.*\([^()]*)$/u, '$1)')
+    .replace(BIG_LETTER, (letter) => letter.toLowerCase())
     .trim();
 }
 
-/** Издваја дневне блокове са једне стране. */
-export function parsePage(allWords, lexicon = null) {
+// Заглавље стране носи период, дакле и датум: "Од 01.10. до 15.10.2026.г.".
+// Непун датум у њему, без године, служи да се то заглавље препозна.
+const PART_DATE = /\d{2}\.\d{2}\./;
+
+// Дан у недељи стоји уз датум, у загради. Кад га скен одвоји у свој ред,
+// тај ред падне у претходни дан и залепи се за његову последњу ставку, па
+// је испадало "...(жито са шлагом- жито) (субота)". Ред који носи само дан
+// у недељи не припада ниједном оброку.
+const WEEKDAY = /(понедељак|уторак|среда|четвртак|петак|субота|недеља)/i;
+
+function isDayLabel(line) {
+  if (!WEEKDAY.test(line.text)) return false;
+  const rest = line.text.replace(WEEKDAY, '').match(/\p{L}/gu) || [];
+  return rest.length <= 3;
+}
+
+// Колико слова сме да стоји лево од датума пре него што ред престане да
+// буде дан. Скен уз неке дане добаци отргнуто слово од ивице табеле
+// ("И", "С"), а то је једно слово. У заглављу стране пре датума стоје
+// речи "Од" и "до" уз још текста, дакле пет слова и више.
+const NOISE_LETTERS = 2;
+
+/**
+ * Датум дана, ако ред почиње датумом.
+ *
+ * Датум сам по себи не означава дан, јер га носи и заглавље стране. Дан се
+ * познаје по положају: његов датум отвара ред, а лево од датума сме да
+ * стоји само оно што је скен добацио од линија табеле.
+ */
+function dayDate(line) {
+  let letters = 0;
+
+  for (const word of line.words) {
+    const hit = word.text.match(DATE);
+    if (hit) return letters <= NOISE_LETTERS ? `${hit[3]}-${hit[2]}-${hit[1]}` : null;
+
+    if (PART_DATE.test(word.text)) return null;
+    letters += (word.text.match(/\p{L}/gu) || []).length;
+    if (letters > NOISE_LETTERS) return null;
+  }
+
+  return null;
+}
+
+/**
+ * Средишта трију колона, из свих заглавља у целом документу.
+ *
+ * Заглавља стоје на истим x координатама у сваком блоку, али их документ
+ * не понавља уз сваки дан. Зато се средина колоне узима из свих страна
+ * одједном, као медијана прочитаних заглавља, и важи и за дан који своје
+ * заглавље нема. Медијана, а не просек, да једно промашено читање не
+ * помери границу.
+ */
+export function headerColumns(pages) {
+  const found = { dorucak: [], rucak: [], vecera: [] };
+  for (const words of pages) {
+    for (const word of words) {
+      const meal = HEADERS[word.text];
+      if (meal) found[meal].push(word.cx);
+    }
+  }
+
+  const columns = {};
+  for (const [meal, list] of Object.entries(found)) {
+    if (list.length === 0) continue;
+    const sorted = [...list].sort((a, b) => a - b);
+    columns[meal] = sorted[Math.floor(sorted.length / 2)];
+  }
+  return columns;
+}
+
+/**
+ * Издваја дневне блокове са једне стране.
+ *
+ * `columns` су средишта колона измерена на целом документу. Ако их нема,
+ * мере се на самој страни, што је довољно за страну која има бар једно
+ * заглавље.
+ */
+export function parsePage(allWords, lexicon = null, columns = null) {
   if (allWords.length === 0) return [];
 
   const unit = lineHeight(allWords);
 
   // Подножје стране и потписи не припадају ниједном дану.
   const footerTops = allWords.filter((w) => FOOTER.test(w.text)).map((w) => w.y);
-  const footerY = footerTops.length ? Math.min(...footerTops) - unit * 0.3 : Infinity;
+  const footerY = footerTops.length ? Math.min(...footerTops) - unit * FOOTER_GAP : Infinity;
   const words = allWords.filter((w) => w.y < footerY);
 
-  const headerRows = toLines(words.filter((w) => HEADERS[w.text]))
-    .filter((row) => row.words.length >= 2)
-    .map((row) => {
-      const columns = {};
-      for (const word of row.words) columns[HEADERS[word.text]] = word.cx;
-      return { top: row.top, columns };
-    })
-    .sort((a, b) => a.top - b.top);
+  const columnX = columns ?? headerColumns([words]);
+  const lines = toLines(words);
 
-  return headerRows.map((header, index) => {
-    const bodyTop = header.top + unit * BODY_TOP;
-    const next = headerRows[index + 1];
-    const bodyEnd = next
-      ? next.top - unit * NEXT_GAP
-      : Math.min(header.top + unit * BLOCK_MAX, footerY);
+  const anchors = [];
+  lines.forEach((line, index) => {
+    const date = dayDate(line);
+    if (date) anchors.push({ index, date });
+  });
 
-    const body = words.filter((w) => w.y > bodyTop && w.y < bodyEnd);
+  return anchors.map((anchor, order) => {
+    const next = anchors[order + 1];
+    const body = lines
+      .slice(anchor.index + 1, next ? next.index : lines.length)
+      .filter((line) => !isDayLabel(line))
+      .flatMap((line) => line.words)
+      // Заглавље колона није јело. Избацује се по имену, па не мора да се
+      // погађа који је ред заглавље: уз неке дане оно стоји у истом реду
+      // са датумом, уз неке у свом, а уз неке га нема.
+      .filter((word) => !HEADERS[word.text]);
 
-    // Датум стоји изнад заглавља. Читамо само цифре, јер дан у недељи
-    // рачунамо из датума, а њега скен често прочита погрешно.
-    const above = words.filter((w) => w.y < header.top && w.y > header.top - unit * DATE_BAND);
-    const hit = above.map((w) => w.text.match(DATE)).find(Boolean);
-
-    const columns = splitColumns(body, header.columns);
-    const day = { date: hit ? `${hit[3]}-${hit[2]}-${hit[1]}` : null };
-    for (const meal of MEALS) day[meal] = itemsFrom(toLines(columns[meal]), lexicon);
+    const byColumn = splitColumns(body, columnX);
+    const day = { date: anchor.date };
+    for (const meal of MEALS) day[meal] = itemsFrom(toLines(byColumn[meal]), lexicon);
     return day;
   });
 }
@@ -194,16 +292,23 @@ function splitColumns(words, headerX) {
 const NEXT_LABEL = /^(АЛЕРГО|НАПОМЕНА|ЈЕЛОВНИК|Јеловник|Верзија|Страница)/i;
 
 /**
- * Скида отргнуто слово са краја.
+ * Скида реп који је скен добацио испод табеле.
  *
- * Испод табеле стоје потписи и линије, а скен из њих понекад отргне
- * усамљено слово и залепи га за крај напомене, па је испадало
- * "...ДО ИЗМЕНЕ ЈЕЛОВНИКА. И". Скидају се два облика: реч од једног или
- * два слова иза тачке, и усамљено слово на самом крају. Ниједан алерген
- * ни српска реченица не завршавају се једним словом.
+ * Испод табеле стоје потписи, печат и линије за потпис. Скен их прочита
+ * као неколико кратких речи и залепи их за крај напомене, па је испадало
+ * "...ДО ИЗМЕНЕ ЈЕЛОВНИКА. И У И река .".
+ *
+ * Реп се познаје по томе што стоји иза завршене реченице и што су му све
+ * речи кратке. Права друга реченица има бар једну реч од пет или више
+ * слова, па се не дира. Исто важи за алергене, који уопште немају тачку.
  */
+// До шест речи од највише четири слова иза завршене реченице, уз тачку
+// или две које скен добаци за њима.
+const TAIL = /([.!?])(?:\s+\p{L}{1,4}){1,6}[\s.!?]*$/u;
+
 export function trimTail(text) {
-  return text
+  return String(text)
+    .replace(TAIL, '$1')
     .replace(/([.!?])\s+\p{L}{1,2}\s*$/u, '$1')
     .replace(/\s+\p{L}\s*$/u, '')
     .replace(/[\s,;:]+$/u, '')
@@ -221,9 +326,15 @@ export function parseFooter(allWords) {
     const unit = lines[start].words[0].h;
 
     // Оба податка се често преламају у следећи ред, који нема своју ознаку.
+    //
+    // Испод напомене стоје потписи и печат. Њих скен чита слабо, са
+    // поузданошћу дубоко испод прага, док прави текст стоји изнад 90. Тај
+    // праг их одваја, па реп и не настане. Исти праг важи и за наставак
+    // ставке у табели, из истог разлога.
     for (let i = start + 1; i < lines.length; i += 1) {
       if (NEXT_LABEL.test(lines[i].text)) break;
       if (lines[i].top - lines[start].top > unit * 3.5) break;
+      if (meanConfidence(lines[i]) < CONTINUATION_MIN_CONF) break;
       text += ` ${lines[i].text}`;
     }
 
@@ -242,22 +353,62 @@ export function parseFooter(allWords) {
   };
 }
 
+const DAY_MS = 86400000;
+const asTime = (iso) => Date.parse(`${iso}T00:00:00Z`);
+const asIso = (time) => new Date(time).toISOString().slice(0, 10);
+
 /**
  * Спаја стране у један јеловник и попуњава датуме који нису прочитани.
- * Дани у документу иду узастопно, па недостајући датум следи из положаја
- * блока. Кад прочитан датум одступа од тог низа, дан се означава за проверу.
+ *
+ * Прочитан датум је извор истине. Раније се датум изводио из редног броја
+ * блока, уз претпоставку да блокови иду као узастопни дани. Та
+ * претпоставка је пала на јеловнику за октобар 2026: документ прескаче
+ * дан, а скен уз то изгуби блок, па је сваки дан испао померен за један и
+ * цео јеловник је био одбијен иако су сви датуми прочитани тачно.
+ *
+ * Сад из редоследа следи само онај датум који скен није прочитао, и то из
+ * растојања између суседа који јесу прочитани. Означава се једино прекид
+ * монотоности, јер датум који није после претходног значи да подела на
+ * дане више не прати документ.
  */
 export function assembleDays(pages) {
-  const days = pages.flat();
-  const anchor = days.findIndex((day) => day.date);
-  if (anchor === -1) return days;
+  const days = pages.flat().map((day) => ({ ...day }));
+  if (!days.some((day) => day.date)) return days;
 
-  const base = Date.parse(`${days[anchor].date}T00:00:00Z`);
+  for (let i = 0; i < days.length; i += 1) {
+    if (days[i].date) continue;
 
-  return days.map((day, index) => {
-    const expected = new Date(base + (index - anchor) * 86400000).toISOString().slice(0, 10);
-    if (!day.date) return { ...day, date: expected, dateGuessed: true };
-    if (day.date !== expected) return { ...day, dateConflict: expected };
-    return day;
-  });
+    let before = i - 1;
+    while (before >= 0 && !days[before].date) before -= 1;
+    let after = i + 1;
+    while (after < days.length && !days[after].date) after += 1;
+
+    const known = before >= 0 ? days[before].date : null;
+    const later = after < days.length ? days[after].date : null;
+
+    if (known && later) {
+      // Датум се изводи само кад је низ јединствен, дакле кад на свако
+      // празно место дође тачно један дан. Ако је растојање веће, документ
+      // је уз непрочитан датум прескочио и дан, па се не зна који је од
+      // прескочених ово. Погађање би јела приписало погрешном дану, а то је
+      // горе од дана који недостаје, па датум остаје непознат и дан испада
+      // у `normalize`. Рупа се потом сама пријави као упозорење.
+      const span = (asTime(later) - asTime(known)) / DAY_MS;
+      if (span !== after - before) continue;
+      days[i].date = asIso(asTime(known) + (i - before) * DAY_MS);
+    } else if (known) {
+      days[i].date = asIso(asTime(known) + (i - before) * DAY_MS);
+    } else {
+      days[i].date = asIso(asTime(later) - (after - i) * DAY_MS);
+    }
+    days[i].dateGuessed = true;
+  }
+
+  for (let i = 1; i < days.length; i += 1) {
+    if (asTime(days[i].date) <= asTime(days[i - 1].date)) {
+      days[i].dateConflict = days[i - 1].date;
+    }
+  }
+
+  return days;
 }

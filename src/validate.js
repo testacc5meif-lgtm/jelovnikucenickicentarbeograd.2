@@ -20,13 +20,26 @@ export const LIMITS = {
   minAverage: 6,       // измерен просек 12,9
 };
 
+const DAY_MS = 86400000;
+const asTime = (iso) => Date.parse(`${iso}T00:00:00Z`);
+
 /**
  * Оцењује да ли обрађен јеловник сме да иде у базу.
  *
- * @returns {{ok: boolean, problems: string[], stats: object}}
+ * Разликује две врсте налаза. `problems` заустављају упис, јер значе да
+ * подаци нису од поверења. `warnings` се само пријављују: јеловник коме
+ * недостаје дан јесте мањкав, али је бољи од јеловника од прошлог месеца,
+ * па улази у базу и види се у /health.
+ *
+ * Та разлика је научена на скупо. Јеловник за октобар 2026. био је
+ * одбијен две недеље због налаза који је заустављао упис, а апликација је
+ * све то време приказивала септембар.
+ *
+ * @returns {{ok: boolean, problems: string[], warnings: string[], stats: object}}
  */
 export function acceptMenu(menu) {
   const problems = [];
+  const warnings = [];
   const days = menu?.days ?? [];
 
   if (days.length < LIMITS.minDays) {
@@ -56,9 +69,13 @@ export function acceptMenu(menu) {
       problems.push(`${day.date}: један оброк има ${biggest} ставки, највише ${LIMITS.maxItemsPerMeal}`);
     }
 
+    // Датум који није после претходног значи да подела на дане више не
+    // прати документ, па подаци нису од поверења.
     if (day.dateConflict) {
-      problems.push(`${day.date}: датум одступа од низа, редослед каже ${day.dateConflict}`);
+      problems.push(`${day.date}: датум није после претходног (${day.dateConflict})`);
     }
+
+    if (day.dateGuessed) warnings.push(`${day.date}: датум није прочитан, изведен је из редоследа`);
   }
 
   const average = perDay.length ? perDay.reduce((sum, n) => sum + n, 0) / perDay.length : 0;
@@ -66,13 +83,26 @@ export function acceptMenu(menu) {
     problems.push(`просек ${average.toFixed(1)} ставки по дану, најмање ${LIMITS.minAverage}`);
   }
 
+  // Прескочен дан усред јеловника обично значи да обрада није нашла блок.
+  // То се пријављује, али не зауставља упис: остали дани су исправни.
+  let missing = 0;
+  for (let i = 1; i < days.length; i += 1) {
+    const gap = (asTime(days[i].date) - asTime(days[i - 1].date)) / DAY_MS;
+    if (gap > 1) {
+      missing += gap - 1;
+      warnings.push(`између ${days[i - 1].date} и ${days[i].date} нема ${gap - 1} дана`);
+    }
+  }
+
   return {
     ok: problems.length === 0,
     problems,
+    warnings,
     stats: {
       days: days.length,
       items: perDay.reduce((sum, n) => sum + n, 0),
       averagePerDay: Number(average.toFixed(1)),
+      missingDays: missing,
     },
   };
 }

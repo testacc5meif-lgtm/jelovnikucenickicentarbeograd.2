@@ -235,6 +235,18 @@ export async function allItemTexts() {
   return rows.map((row) => row.label);
 }
 
+/**
+ * Ставке са бројем појављивања, за речник за исправку.
+ *
+ * Број је оно што речнику даје поверење: јело које се понавља из циклуса у
+ * циклус стоји у стотинама редова, док погрешно прочитана реч стоји у
+ * једном. Зато се броји, а не узима само списак различитих.
+ */
+export async function itemCounts() {
+  const { rows } = await query('SELECT label, COUNT(*)::int AS n FROM items GROUP BY label');
+  return rows.map((row) => ({ label: row.label, n: row.n }));
+}
+
 /* ---------- Претплате ---------- */
 
 export async function saveSubscription(sub, prefs = {}) {
